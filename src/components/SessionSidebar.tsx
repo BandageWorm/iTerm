@@ -3,7 +3,7 @@ import {
   ChevronDown,
   CirclePlus,
   Copy,
-  Download,
+  FileOutput,
   Folder,
   Network,
   Pencil,
@@ -11,7 +11,7 @@ import {
   Search,
   Smartphone,
   Trash2,
-  Upload,
+  FileInput,
   Usb,
 } from "lucide-react";
 import type {
@@ -86,7 +86,7 @@ export function SessionSidebar({
             aria-label={t("sidebar.import")}
             onClick={onImport}
           >
-            <Upload size={15} />
+            <FileInput size={15} />
           </button>
           <button
             className="icon-button"
@@ -95,7 +95,7 @@ export function SessionSidebar({
             onClick={onExport}
             disabled={profiles.length === 0}
           >
-            <Download size={15} />
+            <FileOutput size={15} />
           </button>
           <button
             className="icon-button"

@@ -12,6 +12,15 @@ export type Translator = (
 ) => string;
 
 const zhCN = {
+  "tmux.workspace": "tmux 工作区",
+  "tmux.windows": "tmux 窗口",
+  "tmux.newWindow": "新建 tmux 窗口",
+  "tmux.splitHorizontal": "左右拆分 tmux 窗格",
+  "tmux.splitVertical": "上下拆分 tmux 窗格",
+  "tmux.detach": "分离 tmux，返回 Shell",
+  "tmux.loading": "正在读取 tmux 窗口…",
+  "tmux.pane": "tmux 窗格 {id}",
+  "tmux.transferUnsupported": "tmux 控制模式暂不支持文件传输；请分离 tmux 后传输。",
   "settings.title": "应用设置",
   "settings.subtitle": "应用级默认值只应用于之后创建的新会话。",
   "settings.close": "关闭应用设置",
@@ -543,6 +552,15 @@ const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 const enUS: Record<TranslationKey, string> = {
+  "tmux.workspace": "tmux workspace",
+  "tmux.windows": "tmux windows",
+  "tmux.newWindow": "New tmux window",
+  "tmux.splitHorizontal": "Split tmux pane side by side",
+  "tmux.splitVertical": "Split tmux pane top and bottom",
+  "tmux.detach": "Detach tmux and return to shell",
+  "tmux.loading": "Loading tmux windows…",
+  "tmux.pane": "tmux pane {id}",
+  "tmux.transferUnsupported": "File transfers are unavailable in tmux control mode. Detach tmux before transferring.",
   "settings.title": "Application Settings",
   "settings.subtitle": "Application defaults apply only to new sessions.",
   "settings.close": "Close application settings",

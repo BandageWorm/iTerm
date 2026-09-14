@@ -2,11 +2,11 @@ use rusqlite::{params, Connection};
 use std::{
     collections::BTreeMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 const DATABASE_FILE_NAME: &str = "iterm-state.sqlite3";
 const CURRENT_SCHEMA_VERSION: i64 = 1;
@@ -25,18 +25,24 @@ pub struct PersistentStore {
 }
 
 impl PersistentStore {
-    pub fn open(app: &AppHandle) -> Result<Self, String> {
-        let directory = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("无法定位应用数据目录：{error}"))?;
-        fs::create_dir_all(&directory).map_err(|error| format!("无法创建应用数据目录：{error}"))?;
+    pub fn open(directory: &Path) -> Result<Self, String> {
+        fs::create_dir_all(directory)
+            .map_err(|error| format!("无法创建应用数据目录 {}：{error}", directory.display()))?;
         Self::open_path(directory.join(DATABASE_FILE_NAME))
     }
 
     fn open_path(path: PathBuf) -> Result<Self, String> {
-        let mut connection =
-            Connection::open(&path).map_err(|error| format!("无法打开配置数据库：{error}"))?;
+        let mut connection = Connection::open(&path)
+            .map_err(|error| format!("无法打开配置数据库 {}：{error}", path.display()))?;
+        if connection
+            .is_readonly("main")
+            .map_err(|error| format!("无法检查配置数据库权限：{error}"))?
+        {
+            return Err(format!(
+                "配置数据库为只读 {}，请检查文件权限后重试。",
+                path.display()
+            ));
+        }
         configure_connection(&connection)?;
         migrate_database(&mut connection)?;
         Ok(Self {
@@ -282,6 +288,34 @@ mod tests {
 
         store.clear_items().unwrap();
         assert!(store.load_items().unwrap().is_empty());
+    }
+
+    #[test]
+    fn preserves_all_configuration_when_the_portable_directory_moves() {
+        let root = std::env::temp_dir().join(format!(
+            "iterm-storage-move-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let original = root.join("original").join("portable-data");
+        let moved = root.join("moved");
+        let items: BTreeMap<String, String> = ALLOWED_STORAGE_KEYS
+            .iter()
+            .map(|key| (key.to_string(), format!(r#"{{"key":"{key}"}}"#)))
+            .collect();
+        {
+            let store = PersistentStore::open(&original).unwrap();
+            store.save_items(items.clone()).unwrap();
+        }
+        fs::rename(original.parent().unwrap(), &moved).unwrap();
+        {
+            let store = PersistentStore::open(&moved.join("portable-data")).unwrap();
+            assert_eq!(store.load_items().unwrap(), items);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

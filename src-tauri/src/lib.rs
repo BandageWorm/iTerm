@@ -1,25 +1,68 @@
+mod data_paths;
 mod debug_timing;
 mod logging;
 mod process;
 mod serial;
 mod storage;
 
+use data_paths::AppDataPaths;
 use debug_timing::DebugTimer;
 use process::ProcessRegistry;
 use serial::SerialRegistry;
 use storage::PersistentStore;
-use tauri::Manager;
+use tauri::{Manager, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _run_timer = DebugTimer::start("app_run");
+    let mut context = tauri::generate_context!();
+    let window_configs = context.config().app.windows.clone();
+    // Resolve storage before creating a WebView so portable launches never open
+    // an installed profile or write to its browser data directory.
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
+        .setup(move |app| {
             let _setup_timer = DebugTimer::start("app_setup");
-            let store = PersistentStore::open(app.handle()).map_err(std::io::Error::other)?;
-            app.manage(store);
+            let initialize = || -> Result<(), String> {
+                let paths = AppDataPaths::resolve(app.handle())?;
+                let store = PersistentStore::open(&paths.data_directory)?;
+                app.manage(store);
+                app.manage(paths.clone());
+                for config in window_configs.iter().filter(|config| config.create) {
+                    let mut window = WebviewWindowBuilder::from_config(app, config)
+                        .map_err(|error| format!("无法配置应用窗口：{error}"))?;
+                    if paths.portable {
+                        #[cfg(target_os = "macos")]
+                        {
+                            // WKWebView cannot relocate its persistent data store.
+                            // Settings are restored from SQLite before React starts.
+                            window = window.incognito(true);
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            window = window.data_directory(paths.data_directory.join("webview"));
+                        }
+                    }
+                    window
+                        .build()
+                        .map_err(|error| format!("无法创建应用窗口：{error}"))?;
+                }
+                Ok(())
+            };
+            if let Err(error) = initialize() {
+                eprintln!("iTerm startup failed: {error}");
+                let handle = app.handle().clone();
+                app.dialog()
+                    .message(error)
+                    .title("iTerm 启动失败 / Startup failed")
+                    .kind(MessageDialogKind::Error)
+                    .show(move |_| handle.exit(1));
+            }
             Ok(())
         })
         .manage(SerialRegistry::default())
@@ -55,6 +98,6 @@ pub fn run() {
             storage::remove_persistent_item,
             storage::clear_persistent_items,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("failed to run iTerm");
 }

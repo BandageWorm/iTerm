@@ -1,6 +1,6 @@
 import {
   CirclePlus,
-  Download,
+  FileOutput,
   Eraser,
   FileDown,
   FileUp,
@@ -8,7 +8,7 @@ import {
   Play,
   Square,
   Trash2,
-  Upload,
+  FileInput,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -410,7 +410,7 @@ export function SenderPane({
             title={t("sender.import")}
             aria-label={t("sender.import")}
           >
-            <Upload size={16} />
+            <FileInput size={16} />
           </button>
           <button
             className="icon-button"
@@ -419,7 +419,7 @@ export function SenderPane({
             title={t("sender.export")}
             aria-label={t("sender.export")}
           >
-            <Download size={16} />
+            <FileOutput size={16} />
           </button>
           <button
             className="icon-button"

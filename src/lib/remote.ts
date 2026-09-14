@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { TmuxClient } from "./tmux";
 import { appendLineEnding, isTauriRuntime } from "./serial";
 import type {
   AdbDeviceDescriptor,
@@ -11,6 +12,61 @@ import type {
 } from "./types";
 
 const mockTimers = new Map<string, number[]>();
+const tmuxClients = new Map<string, TmuxClient>();
+const tmuxListeners = new Set<() => void>();
+
+export function getProcessTmuxClient(sessionId: string): TmuxClient | undefined {
+  return tmuxClients.get(sessionId);
+}
+
+export function subscribeProcessTmuxClients(listener: () => void): () => void {
+  tmuxListeners.add(listener);
+  return () => { tmuxListeners.delete(listener); };
+}
+
+function removeTmuxClient(sessionId: string): void {
+  tmuxClients.get(sessionId)?.dispose();
+  if (tmuxClients.delete(sessionId)) {
+    for (const listener of tmuxListeners) listener();
+  }
+}
+
+function processEvents(
+  sessionId: string,
+  onEvent: (event: SerialEvent) => void,
+): (event: SerialEvent) => void {
+  removeTmuxClient(sessionId);
+  let receivedAtMs = Date.now();
+  let sequence = 0;
+  const client = new TmuxClient({
+    send: async (command) => {
+      await writeRawProcessBytes(sessionId, new TextEncoder().encode(command));
+    },
+    onData: (bytes) => onEvent({
+      type: "data", sessionId, sequence: ++sequence, receivedAtMs,
+      bytes: Array.from(bytes),
+    }),
+    // The controller retains protocol/command errors in its UI snapshot.
+    onError: () => undefined,
+  });
+  tmuxClients.set(sessionId, client);
+  for (const listener of tmuxListeners) listener();
+  return (event) => {
+    // Ignore late events from a connection replaced during reconnect.
+    if (tmuxClients.get(sessionId) !== client) return;
+    if (event.type === "data") {
+      receivedAtMs = event.receivedAtMs;
+      client.feed(new Uint8Array(event.bytes));
+    } else {
+      if ((event.type === "state" &&
+          ["disconnected", "error", "deviceLost"].includes(event.state)) ||
+          (event.type === "error" && !event.recoverable)) {
+        removeTmuxClient(sessionId);
+      }
+      onEvent(event);
+    }
+  };
+}
 
 export async function listExternalTools(): Promise<ExternalToolStatus[]> {
   if (isTauriRuntime()) {
@@ -86,6 +142,7 @@ export async function openSshSession(
   profile: SessionProfile,
   onEvent: (event: SerialEvent) => void,
 ): Promise<void> {
+  onEvent = processEvents(sessionId, onEvent);
   if (isTauriRuntime()) {
     const channel = new Channel<SerialEvent>();
     channel.onmessage = onEvent;
@@ -102,6 +159,9 @@ export async function openSshSession(
         termType: profile.terminal.termType,
       },
       onEvent: channel,
+    }).catch((error: unknown) => {
+      removeTmuxClient(sessionId);
+      throw error;
     });
     return;
   }
@@ -141,6 +201,7 @@ export async function openAdbSession(
   profile: SessionProfile,
   onEvent: (event: SerialEvent) => void,
 ): Promise<void> {
+  onEvent = processEvents(sessionId, onEvent);
   if (isTauriRuntime()) {
     const channel = new Channel<SerialEvent>();
     channel.onmessage = onEvent;
@@ -151,6 +212,9 @@ export async function openAdbSession(
         shell: profile.adb.shell,
       },
       onEvent: channel,
+    }).catch((error: unknown) => {
+      removeTmuxClient(sessionId);
+      throw error;
     });
     return;
   }
@@ -188,15 +252,17 @@ export async function openAdbSession(
 export async function closeProcessSession(sessionId: string): Promise<void> {
   if (isTauriRuntime()) {
     await invoke("close_process_session", { sessionId });
+    removeTmuxClient(sessionId);
     return;
   }
   for (const timer of mockTimers.get(sessionId) ?? []) {
     window.clearTimeout(timer);
   }
   mockTimers.delete(sessionId);
+  removeTmuxClient(sessionId);
 }
 
-export async function writeProcessBytes(
+async function writeRawProcessBytes(
   sessionId: string,
   bytes: Uint8Array,
 ): Promise<number> {
@@ -208,11 +274,30 @@ export async function writeProcessBytes(
   return bytes.length;
 }
 
+export async function writeProcessBytes(
+  sessionId: string,
+  bytes: Uint8Array,
+  paneId?: string,
+): Promise<number> {
+  const client = tmuxClients.get(sessionId);
+  if (client?.getSnapshot().active) {
+    await client.input(bytes, paneId);
+    return bytes.length;
+  }
+  if (paneId) throw new Error("tmux control mode is no longer active");
+  return writeRawProcessBytes(sessionId, bytes);
+}
+
 export async function resizeProcessSession(
   sessionId: string,
   cols: number,
   rows: number,
 ): Promise<void> {
+  const client = tmuxClients.get(sessionId);
+  if (client?.getSnapshot().active) {
+    await client.resize(cols, rows);
+    return;
+  }
   if (isTauriRuntime()) {
     await invoke("resize_process_session", { sessionId, cols, rows });
   }
@@ -222,10 +307,12 @@ export async function writeProcessText(
   sessionId: string,
   text: string,
   lineEnding: LineEnding = "none",
+  paneId?: string,
 ): Promise<number> {
   return writeProcessBytes(
     sessionId,
     new TextEncoder().encode(appendLineEnding(text, lineEnding)),
+    paneId,
   );
 }
 

@@ -69,6 +69,45 @@ SSH 和 ADB Shell。它采用本地优先的数据策略，并以 clean-room 方
 当前发行包为自动化构建的未签名版本。macOS 用户可能需要在“系统设置 → 隐私与安全性”
 中确认打开；Linux 用户需要拥有串口设备访问权限。
 
+### 便携模式（绿色版）
+
+在程序所在文件夹创建一个名为 `iterm.portable` 的空文件（不要带 `.txt` 扩展名），
+再启动 iTerm，即会把应用配置保存在同级 `portable-data` 文件夹中。Windows 便携 ZIP
+已包含该标记，解压后直接运行 `iterm.exe`；仍需系统已安装 Microsoft Edge WebView2 Runtime。
+Windows 安装程序仍用于常规安装。
+
+```text
+iTerm/
+├── iterm.exe                 # Linux 为 iTerm.AppImage；macOS 为 iTerm.app
+├── iterm.portable            # 空文件，用于启用便携模式
+└── portable-data/
+    ├── iterm-state.sqlite3    # 会话、设置、工作区、发送器与命令历史
+    ├── logs/                 # 默认会话日志
+    └── webview/              # Windows / Linux 的 WebView 数据
+```
+
+- Windows：将标记放在 `iterm.exe` 旁；通过快捷方式或终端启动也按程序位置定位。
+- Linux AppImage：将标记放在 `.AppImage` 文件旁；不会写入 AppImage 的临时挂载目录。
+- macOS：将整个 `iTerm.app` 放进一个可写文件夹，再在 `.app` 旁创建标记；不要放进
+  `Contents/MacOS`，也不要直接从只读 DMG 运行。macOS 便携模式使用临时 WebView，
+  每次启动从 SQLite 恢复配置；仅诊断历史和 WebView 缓存不会跨重启保留。
+
+程序会检查便携目录是否可写；不可写时显示错误并退出，不会改存到系统目录。
+退出应用后，复制整个文件夹即可携带配置与默认日志。不要在运行期间移动、备份或拔出
+所在磁盘；若 SQLite 旁仍有 `-wal`、`-shm` 文件，应与数据库一起保留。
+自定义日志路径、SSH 私钥路径和文件传输位置仍按用户选择的位置保存，换电脑后可能需要调整；
+系统 OpenSSH、`~/.ssh/config`、密钥、`known_hosts`、SSH Agent 和 ADB 不会自动复制。
+
+首次启用便携模式会使用独立配置。迁移已有配置时，先退出所有 iTerm 进程，再把旧目录中的
+`iterm-state.sqlite3`（及仍存在的同名 `-wal`、`-shm` 文件）复制到尚未使用的
+`portable-data` 中，然后启动。旧的常规安装数据目录为：
+
+- Windows：`%APPDATA%\com.oubliele.iterm`；
+- macOS：`~/Library/Application Support/com.oubliele.iterm`；
+- Linux：`$XDG_DATA_HOME/com.oubliele.iterm`，未设置时为 `~/.local/share/com.oubliele.iterm`。
+
+移除 `iterm.portable` 后重启，将恢复使用常规安装数据；两套配置不会自动合并。
+
 ## 快速开始
 
 1. 启动 iTerm；
@@ -96,6 +135,22 @@ SSH 调用系统 OpenSSH 客户端，支持 SSH Agent、`~/.ssh/config`、递归
 
 选择“密码 / 键盘交互”后，在终端显示的 OpenSSH 提示中直接输入凭据。iTerm 不读取、
 记录或持久化密码。系统必须能直接执行 `ssh` 命令。
+
+### tmux 控制模式
+
+在 SSH（或已安装 tmux 的 ADB Shell）终端中执行 `tmux -CC`，或
+`tmux -CC attach -t 工作会话`。iTerm 会自动识别控制模式，在当前会话中显示
+远端 tmux 窗口标签和独立终端窗格。工具栏支持新建窗口、左右/上下拆分和分离，
+点击窗格即可切换输入目标；中文输入、粘贴与窗口大小变化会转发到对应窗格。
+重新附着时会恢复窗格画面及最近最多 2,000 行历史（受每窗格缓冲上限约束）。
+
+点击“分离 tmux，返回 Shell”只分离客户端，远端会话继续运行；之后可以再次附着。
+远端需要安装 tmux，iTerm 不会替你安装或启动额外的本机 tmux 服务。
+控制模式不处理普通 tmux 客户端的前缀快捷键，请使用工作区按钮管理窗口和拆分。
+终端设置的字号、字体、调色板及搜索仍可使用；时间戳和 Hex 接收视图不应用于
+控制模式的屏幕。文件传输请先分离 tmux；连接日志记录原始控制协议流。
+
+协议说明参见 [tmux Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode)。
 
 ### ADB Shell
 

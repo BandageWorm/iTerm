@@ -37,7 +37,7 @@ import { SenderPane } from "./components/SenderPane";
 import { AppSettingsDialog } from "./components/AppSettingsDialog";
 import { SessionDialog } from "./components/SessionDialog";
 import { SessionSidebar } from "./components/SessionSidebar";
-import { TerminalPane } from "./components/TerminalPane";
+import { SessionTerminal } from "./components/SessionTerminal";
 import {
   areSerialPortListsEqual,
   clearSerialBuffers,
@@ -63,6 +63,7 @@ import {
   openAdbSession,
   openSshSession,
   resizeProcessSession,
+  getProcessTmuxClient,
   setProcessLogPaused,
   startProcessLog,
   stopProcessLog,
@@ -274,9 +275,10 @@ async function writeConfiguredText(
   profile: SessionProfile,
   text: string,
   lineEnding: SenderPreset["lineEnding"] = "none",
+  paneId?: string,
 ): Promise<number> {
   if (profile.protocol === "ssh" || profile.protocol === "adb") {
-    return writeProcessText(sessionId, text, lineEnding);
+    return writeProcessText(sessionId, text, lineEnding, paneId);
   }
   return writeSerialText(
     sessionId,
@@ -290,10 +292,11 @@ async function writeConfiguredBytes(
   sessionId: string,
   profile: SessionProfile,
   bytes: Uint8Array,
+  paneId?: string,
 ): Promise<number> {
   return profile.protocol === "serial"
     ? writeSerialBytes(sessionId, bytes)
-    : writeProcessBytes(sessionId, bytes);
+    : writeProcessBytes(sessionId, bytes, paneId);
 }
 
 export default function App() {
@@ -1574,7 +1577,8 @@ export default function App() {
   const writeTerminalInput = async (
     runtime: RuntimeSession,
     profile: SessionProfile,
-    value: string,
+    value: string | Uint8Array,
+    paneId?: string,
   ) => {
     if (runtime.state !== "connected" || runtime.transferActive) return;
     try {
@@ -1593,10 +1597,11 @@ export default function App() {
           );
           return targetProfile
             ? [
-                writeConfiguredText(
-                  target.id,
-                  targetProfile,
-                  value,
+                (typeof value === "string"
+                  ? writeConfiguredText(target.id, targetProfile, value, "none",
+                      target.id === runtime.id ? paneId : undefined)
+                  : writeConfiguredBytes(target.id, targetProfile, value,
+                      target.id === runtime.id ? paneId : undefined)
                 ).then((byteCount) => ({
                   sessionId: target.id,
                   byteCount,
@@ -1677,6 +1682,9 @@ export default function App() {
       activeSession.transferActive
     ) {
       throw new Error(t("runtime.notConnected"));
+    }
+    if (getProcessTmuxClient(activeSession.id)?.getSnapshot().active) {
+      throw new Error(t("tmux.transferUnsupported"));
     }
     const sessionId = activeSession.id;
     const profile = activeProfile;
@@ -1847,6 +1855,9 @@ export default function App() {
     ) {
       throw new Error(t("runtime.notConnected"));
     }
+    if (getProcessTmuxClient(activeSession.id)?.getSnapshot().active) {
+      throw new Error(t("tmux.transferUnsupported"));
+    }
     const outputDirectory = await selectBinaryOutputDirectory(
       t("runtime.selectReceiveDirectory"),
     );
@@ -1939,6 +1950,9 @@ export default function App() {
     const suggestedName = `xmodem-${new Date()
       .toISOString()
       .replace(/[:.]/g, "-")}.bin`;
+    if (getProcessTmuxClient(activeSession.id)?.getSnapshot().active) {
+      throw new Error(t("tmux.transferUnsupported"));
+    }
     const outputPath = await selectBinaryOutputFile(
       t("runtime.selectReceiveFile"),
       suggestedName,
@@ -2020,6 +2034,9 @@ export default function App() {
       activeSession.transferActive
     ) {
       throw new Error(t("runtime.notConnected"));
+    }
+    if (getProcessTmuxClient(activeSession.id)?.getSnapshot().active) {
+      throw new Error(t("tmux.transferUnsupported"));
     }
     const outputDirectory = await selectBinaryOutputDirectory(
       t("runtime.selectReceiveDirectory"),
@@ -3335,7 +3352,7 @@ export default function App() {
               const profile = profileById.get(session.profileId);
               if (!profile) return null;
               return (
-                <TerminalPane
+                <SessionTerminal
                   key={session.id}
                   session={session}
                   profile={profile}
@@ -3399,6 +3416,9 @@ export default function App() {
                   }
                   onInput={(value) =>
                     void writeTerminalInput(session, profile, value)
+                  }
+                  onTmuxInput={(paneId, bytes) =>
+                    void writeTerminalInput(session, profile, bytes, paneId)
                   }
                   onFontSizeChange={(fontSize) =>
                     changeProfileFontSize(profile.id, fontSize)

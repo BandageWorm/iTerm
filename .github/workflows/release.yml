@@ -218,6 +218,25 @@ jobs:
           uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
+      - name: Package and publish Windows portable archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $archiveName = "iTerm_${version}_x64_portable.zip"
+          $staging = Join-Path $env:RUNNER_TEMP "iterm-portable"
+          $archive = Join-Path $env:RUNNER_TEMP $archiveName
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Copy-Item "src-tauri/target/release/iterm.exe" (Join-Path $staging "iterm.exe")
+          New-Item -ItemType File -Path (Join-Path $staging "iterm.portable") -Force | Out-Null
+          Compress-Archive -Path (Join-Path $staging "iterm.exe"), (Join-Path $staging "iterm.portable") -DestinationPath $archive -Force
+          $checksum = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  $archiveName" | Set-Content -LiteralPath "$archive.sha256" -Encoding ascii
+          gh release upload "$env:RELEASE_TAG" "$archive" "$archive.sha256" --repo "$env:GITHUB_REPOSITORY" --clobber
+
   sbom:
     name: Publish software bill of materials
     needs:
@@ -281,6 +300,8 @@ jobs:
 
             const expected = [
               { label: "Windows NSIS installer", test: (name) => name.endsWith("-setup.exe") },
+              { label: "Windows portable archive", test: (name) => name.endsWith("_x64_portable.zip") },
+              { label: "Windows portable SHA-256 checksum", test: (name) => name.endsWith("_x64_portable.zip.sha256") },
               { label: "Apple Silicon DMG", test: (name) => name.endsWith("_aarch64.dmg") },
               { label: "Intel DMG", test: (name) => name.endsWith("_x64.dmg") },
               { label: "Debian package", test: (name) => name.endsWith("_amd64.deb") },

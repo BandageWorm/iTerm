@@ -1,3 +1,4 @@
+use crate::data_paths::AppDataPaths;
 use chrono::{DateTime, Local};
 use encoding_rs::{Decoder, Encoding};
 use serde::Deserialize;
@@ -67,11 +68,6 @@ pub fn build_log_spec(app: &AppHandle, request: &StartLogRequest) -> Result<LogS
     let label = request.encoding.trim().to_ascii_lowercase();
     let encoding = Encoding::for_label(label.as_bytes())
         .ok_or_else(|| format!("不支持字符编码：{}", request.encoding))?;
-    let directory = app
-        .path()
-        .app_log_dir()
-        .map_err(|error| format!("无法确定日志目录：{error}"))?;
-    fs::create_dir_all(&directory).map_err(|error| format!("无法创建日志目录：{error}"))?;
     let max_bytes = if request.max_file_size_mib == 0 {
         None
     } else {
@@ -99,7 +95,7 @@ pub fn build_log_spec(app: &AppHandle, request: &StartLogRequest) -> Result<LogS
             }
             path
         }
-        None => directory.join(default_log_file_name(&request.session_name)),
+        None => default_log_directory(app)?.join(default_log_file_name(&request.session_name)),
     };
     Ok(LogStartSpec {
         path,
@@ -131,16 +127,16 @@ pub fn open_log_directory(path: Option<String>, app: AppHandle) -> Result<(), St
                 .canonicalize()
                 .map_err(|error| format!("无法读取日志目录：{error}"))?
         }
-        None => {
-            let directory = app
-                .path()
-                .app_log_dir()
-                .map_err(|error| format!("无法确定日志目录：{error}"))?;
-            fs::create_dir_all(&directory).map_err(|error| format!("无法创建日志目录：{error}"))?;
-            directory
-        }
+        None => default_log_directory(&app)?,
     };
     open_with_system(&directory)
+}
+
+fn default_log_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app.state::<AppDataPaths>().log_directory.clone();
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("无法创建日志目录 {}：{error}", directory.display()))?;
+    Ok(directory)
 }
 
 #[tauri::command]
