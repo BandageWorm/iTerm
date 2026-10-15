@@ -4,8 +4,8 @@ import { Terminal } from "@xterm/xterm";
 import {
   DEC_SOFT_RESET_SEQUENCE,
   clampTerminalFontSize,
-  classifyTerminalCompletionResponse,
   installUnicode11,
+  isDuplicateSpecialKeyPress,
   isTerminalCompletionTab,
   mapTerminalSpecialKey,
   resetTerminal,
@@ -110,18 +110,24 @@ describe("terminal special key mapping", () => {
     expect(isTerminalCompletionTab(keyEvent("Enter"))).toBe(false);
   });
 
-  it("moves valid completion text to a new line", () => {
-    expect(classifyTerminalCompletionResponse("onsole")).toBe("newline");
+  it("suppresses keypress events that duplicate self-sent special keys", () => {
+    expect(isDuplicateSpecialKeyPress(keyEvent("Enter"))).toBe(false);
+    expect(isDuplicateSpecialKeyPress(keyEvent("Tab"))).toBe(false);
     expect(
-      classifyTerminalCompletionResponse("\u001b[36monsole\u001b[0m"),
-    ).toBe("newline");
-  });
-
-  it("does not move rejected or already multiline completions", () => {
-    expect(classifyTerminalCompletionResponse("\u0007")).toBe("none");
-    expect(classifyTerminalCompletionResponse("\r\ncommand")).toBe("none");
-    expect(classifyTerminalCompletionResponse("\u001b[31m")).toBe("wait");
-    expect(classifyTerminalCompletionResponse("")).toBe("wait");
+      isDuplicateSpecialKeyPress({ ...keyEvent("Enter"), type: "keypress" }),
+    ).toBe(true);
+    expect(
+      isDuplicateSpecialKeyPress({ ...keyEvent("Tab"), type: "keypress" }),
+    ).toBe(true);
+    expect(
+      isDuplicateSpecialKeyPress({ ...keyEvent("Backspace"), type: "keypress" }),
+    ).toBe(true);
+    expect(
+      isDuplicateSpecialKeyPress({ ...keyEvent("a"), type: "keypress" }),
+    ).toBe(false);
+    expect(
+      isDuplicateSpecialKeyPress({ ...keyEvent("Enter"), type: "keyup" }),
+    ).toBe(false);
   });
 
   it("leaves modified, composing, and unrelated keys to xterm", () => {

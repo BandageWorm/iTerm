@@ -5,8 +5,6 @@ export const DEFAULT_TERMINAL_FONT_SIZE = 14;
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 40;
 export const TERMINAL_CONVERT_EOL = true;
-const TERMINAL_ESCAPE_SEQUENCE =
-  /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001b\\))/g;
 
 export function clampTerminalFontSize(fontSize: number): number {
   return Math.min(
@@ -60,17 +58,21 @@ export function isTerminalCompletionTab(event: TerminalKeyEvent): boolean {
   );
 }
 
-export type TerminalCompletionResponse = "newline" | "none" | "wait";
-
-export function classifyTerminalCompletionResponse(
-  text: string,
-): TerminalCompletionResponse {
-  if (!text) return "wait";
-  const visible = text.replace(TERMINAL_ESCAPE_SEQUENCE, "");
-  if (/^[\r\n]/.test(visible)) return "none";
-  if (/[^\u0000-\u001f\u007f]/.test(visible)) return "newline";
-  if (visible.includes("\u0007")) return "none";
-  return "wait";
+/**
+ * xterm 6 keeps processing `keypress` events even when a custom keydown
+ * handler already consumed the key, so Enter (charCode 13) would be sent
+ * twice on serial links. Suppress keypress events for keys that the
+ * keydown handler transmits itself.
+ */
+export function isDuplicateSpecialKeyPress(
+  event: TerminalKeyEvent,
+): boolean {
+  return (
+    event.type === "keypress" &&
+    (event.key === "Enter" ||
+      event.key === "Tab" ||
+      event.key === "Backspace")
+  );
 }
 
 export function mapTerminalSpecialKey(

@@ -24,8 +24,8 @@ import type { ResolvedTheme } from "../lib/preferences";
 import {
   installUnicode11,
   clampTerminalFontSize,
-  classifyTerminalCompletionResponse,
   DEFAULT_TERMINAL_FONT_SIZE,
+  isDuplicateSpecialKeyPress,
   isTerminalCompletionTab,
   MAX_TERMINAL_FONT_SIZE,
   mapTerminalSpecialKey,
@@ -59,8 +59,6 @@ import { loadSenderPresets } from "../lib/senders";
 import type { SenderPreset } from "../lib/types";
 import { colorizeSerialText } from "../lib/serialColors";
 import { resolveTerminalTheme } from "../lib/terminalTheme";
-
-const COMPLETION_RESPONSE_WINDOW_MS = 500;
 
 interface TerminalPaneProps {
   session: RuntimeSession;
@@ -107,8 +105,6 @@ export function TerminalPane({
   const decoderRef = useRef<TextDecoder | null>(null);
   const lastWrittenNonceRef = useRef<number | null>(null);
   const startsNewLineRef = useRef(true);
-  const completionPendingRef = useRef(false);
-  const completionTimerRef = useRef<number | null>(null);
   const typedCommandRef = useRef("");
   const inlineSuggestionsRef = useRef<CommandSuggestion[]>([]);
   const activeInlineSuggestionRef = useRef(-1);
@@ -214,23 +210,6 @@ export function TerminalPane({
   fontSizeRef.current = profile.terminal.fontSize;
   fontSizeChangeRef.current = onFontSizeChange;
 
-  const clearPendingCompletion = () => {
-    completionPendingRef.current = false;
-    if (completionTimerRef.current !== null) {
-      window.clearTimeout(completionTimerRef.current);
-      completionTimerRef.current = null;
-    }
-  };
-
-  const startPendingCompletion = () => {
-    clearPendingCompletion();
-    completionPendingRef.current = true;
-    completionTimerRef.current = window.setTimeout(
-      clearPendingCompletion,
-      COMPLETION_RESPONSE_WINDOW_MS,
-    );
-  };
-
   const changeTerminalFontSize = (requestedSize: number) => {
     const fontSize = clampTerminalFontSize(requestedSize);
     if (fontSize === fontSizeRef.current) return;
@@ -335,6 +314,9 @@ export function TerminalPane({
     }
 
     terminal.attachCustomKeyEventHandler((event) => {
+      if (isDuplicateSpecialKeyPress(event)) {
+        return false;
+      }
       const shortcutKey = event.key.toLocaleLowerCase();
       const zoomShortcut =
         event.type === "keydown" &&
@@ -422,9 +404,6 @@ export function TerminalPane({
             suggestion.command.length > current.length
           ) {
             event.preventDefault();
-            if (profile.protocol === "serial") {
-              startPendingCompletion();
-            }
             trackedInputRef.current(suggestion.command.slice(current.length));
             setActiveInlineSuggestion(-1);
             return false;
@@ -436,7 +415,6 @@ export function TerminalPane({
         isTerminalCompletionTab(event)
       ) {
         event.preventDefault();
-        startPendingCompletion();
         trackedInputRef.current("\t");
         return false;
       }
@@ -448,9 +426,6 @@ export function TerminalPane({
       return true;
     });
     const inputDisposable = terminal.onData((value) => {
-      if (completionPendingRef.current && value !== "\t") {
-        clearPendingCompletion();
-      }
       trackedInputRef.current(value);
     });
     const dimensionsDisposable = terminal.onResize(({ cols, rows }) =>
@@ -506,7 +481,6 @@ export function TerminalPane({
       decoderRef.current = null;
       lastWrittenNonceRef.current = null;
       startsNewLineRef.current = true;
-      clearPendingCompletion();
     };
     // Receive history is intentionally replayed only when the terminal itself
     // is recreated by one of the terminal configuration dependencies below.
@@ -551,20 +525,12 @@ export function TerminalPane({
     );
     startsNewLineRef.current = timestamped.startsNewLine;
     const text = profile.terminal.timestamp ? timestamped.text : decoded;
-    let completionPrefix = "";
-    if (completionPendingRef.current) {
-      const response = classifyTerminalCompletionResponse(decoded);
-      if (response !== "wait") {
-        clearPendingCompletion();
-        if (response === "newline") completionPrefix = "\r\n";
-      }
-    }
     const displayText =
       profile.protocol === "serial" && profile.terminal.semanticColors
         ? colorizeSerialText(text)
         : text;
     if (displayText) {
-      terminalRef.current.write(`${completionPrefix}${displayText}`);
+      terminalRef.current.write(displayText);
     }
     lastWrittenNonceRef.current = session.lastChunk.nonce;
   }, [session.lastChunk]);
