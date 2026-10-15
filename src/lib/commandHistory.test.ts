@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSenderPreset } from "./types";
+import { createQuickCommand } from "./quickCommands";
 import {
   buildCommandSuggestions,
   commandLineEnding,
@@ -34,11 +34,8 @@ describe("command history", () => {
 
   it("combines quick commands and history without duplicate payloads", () => {
     const quick = {
-      ...createSenderPreset(),
+      ...createQuickCommand("git status", "查看状态", "cr"),
       id: "status",
-      name: "查看状态",
-      payload: "git status",
-      lineEnding: "cr" as const,
     };
     const suggestions = buildCommandSuggestions(
       "status",
@@ -58,6 +55,21 @@ describe("command history", () => {
       command: "git status",
       lineEnding: "cr",
     });
+  });
+
+  it("matches quick commands by display name as well as payload", () => {
+    const quick = createQuickCommand("reboot", "重启设备");
+
+    expect(buildCommandSuggestions("重启", [], [quick])[0]).toMatchObject({
+      source: "quick",
+      command: "reboot",
+      label: "重启设备",
+    });
+    expect(buildCommandSuggestions("reb", [], [quick])[0]).toMatchObject({
+      source: "quick",
+      command: "reboot",
+    });
+    expect(buildCommandSuggestions("nothing", [], [quick])).toHaveLength(0);
   });
 
   it("captures basic terminal editing and complete commands", () => {

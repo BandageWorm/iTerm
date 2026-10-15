@@ -95,6 +95,7 @@ textarea:disabled {
 .app-shell.is-focus-mode .tab-strip,
 .app-shell.is-focus-mode .session-toolbar,
 .app-shell.is-focus-mode .sender-pane,
+.app-shell.is-focus-mode .quick-command-bar,
 .app-shell.is-focus-mode .statusbar {
   display: none;
 }
@@ -4036,21 +4037,6 @@ progress {
   right: 221px;
 }
 
-.terminal-pane.has-quickbar .terminal-host,
-.terminal-pane.has-quickbar .terminal-hex-view {
-  bottom: 32px;
-}
-
-.terminal-pane.has-command-composer.has-quickbar .terminal-host,
-.terminal-pane.has-command-composer.has-quickbar .terminal-hex-view {
-  bottom: 85px;
-}
-
-.terminal-pane.has-command-suggestions.has-quickbar .terminal-host,
-.terminal-pane.has-command-suggestions.has-quickbar .terminal-hex-view {
-  bottom: 282px;
-}
-
 .terminal-tools {
   top: 4px;
   right: 225px;
@@ -4078,7 +4064,7 @@ progress {
   z-index: 3;
   top: 0;
   right: 0;
-  bottom: 32px;
+  bottom: 4px;
   display: flex;
   width: 216px;
   min-width: 0;
@@ -4128,10 +4114,18 @@ progress {
   text-align: center;
 }
 
-.terminal-history-list > button {
+.terminal-history-entry {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.terminal-history-entry > button:first-child {
   display: grid;
-  width: 100%;
+  min-width: 0;
   min-height: 27px;
+  flex: 1;
   align-items: center;
   gap: 5px;
   padding: 4px 6px;
@@ -4142,9 +4136,30 @@ progress {
   text-align: left;
 }
 
-.terminal-history-list > button:hover {
+.terminal-history-entry > button:first-child:hover {
   background: var(--control-hover);
   color: var(--label);
+}
+
+.terminal-history-entry > button:last-child {
+  display: grid;
+  width: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 2px;
+  color: var(--terminal-muted);
+  cursor: pointer;
+}
+
+.terminal-history-entry > button:last-child:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--label);
+}
+
+.terminal-history-entry > button:last-child.is-collected {
+  color: var(--green);
+  cursor: default;
+  opacity: 0.55;
 }
 
 .terminal-history-list code {
@@ -4159,22 +4174,21 @@ progress {
   font-size: 9px;
 }
 
-.terminal-quickbar {
-  position: absolute;
+/* Global quick command bar -------------------------------------------- */
+
+.quick-command-bar {
+  position: relative;
   z-index: 4;
-  right: 0;
-  bottom: 0;
-  left: 0;
   display: flex;
-  height: 32px;
   min-width: 0;
+  flex: 0 0 32px;
   align-items: stretch;
   background: var(--toolbar-background);
-  border-top: 1px solid var(--terminal-border);
+  border-top: 1px solid var(--separator);
   color: var(--secondary-label);
 }
 
-.terminal-quickbar-title {
+.quick-command-bar-title {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -4186,7 +4200,7 @@ progress {
   font-weight: 600;
 }
 
-.terminal-quickbar-commands {
+.quick-command-bar-commands {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -4195,12 +4209,11 @@ progress {
   scrollbar-width: none;
 }
 
-.terminal-quickbar-commands::-webkit-scrollbar {
+.quick-command-bar-commands::-webkit-scrollbar {
   display: none;
 }
 
-.terminal-quickbar-commands > button,
-.terminal-quickbar-settings {
+.quick-command-bar-commands > button {
   height: 25px;
   flex: 0 0 auto;
   align-self: center;
@@ -4209,33 +4222,162 @@ progress {
   color: var(--secondary-label);
   cursor: pointer;
   font: 10px "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
 }
 
-.terminal-quickbar-commands > button:hover:not(:disabled),
-.terminal-quickbar-settings:hover {
+.quick-command-bar-commands > button:hover:not(:disabled) {
   background: var(--control-hover);
   color: var(--label);
 }
 
-.terminal-quickbar-commands > button:disabled {
+.quick-command-bar-commands > button[aria-disabled="true"] {
   cursor: default;
   opacity: 0.45;
 }
 
-.terminal-quickbar-settings {
+.quick-command-bar-empty {
+  padding: 0 8px;
+  color: var(--terminal-muted);
+  font-size: 10px;
+}
+
+.quick-command-bar-notice {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--warning);
+  font-size: 10px;
+}
+
+.quick-command-bar-add {
   display: grid;
-  width: 29px;
+  width: 30px;
+  flex: 0 0 auto;
   place-items: center;
-  padding: 0;
-  border-right: 0;
   border-left: 1px solid var(--separator);
+  color: var(--secondary-label);
+  cursor: pointer;
+}
+
+.quick-command-bar-add:hover {
+  background: var(--control-hover);
+  color: var(--label);
+}
+
+.quick-command-menu {
+  position: absolute;
+  z-index: 9;
+  bottom: 100%;
+  display: grid;
+  width: 200px;
+  padding: 3px;
+  margin-bottom: 4px;
+  background: var(--popover-background);
+  border: 1px solid var(--separator-strong);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
+}
+
+.quick-command-menu > button {
+  padding: 5px 8px;
+  border-radius: 2px;
+  color: var(--label);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.quick-command-menu > button:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.quick-command-menu > button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.quick-command-menu-separator {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--separator);
+}
+
+.quick-command-editor {
+  position: absolute;
+  z-index: 9;
+  bottom: 100%;
+  display: grid;
+  width: 320px;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 9px;
+  background: var(--popover-background);
+  border: 1px solid var(--separator-strong);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22);
+  color: var(--label);
+}
+
+.quick-command-editor label {
+  display: grid;
+  gap: 3px;
+  color: var(--secondary-label);
+  font-size: 10px;
+}
+
+.quick-command-editor input,
+.quick-command-editor select,
+.quick-command-editor textarea {
+  padding: 4px 6px;
+  background: var(--control-background);
+  border: 1px solid var(--separator);
+  border-radius: 2px;
+  color: var(--label);
+  font: 11px "Cascadia Mono", Consolas, monospace;
+}
+
+.quick-command-editor textarea {
+  resize: vertical;
+}
+
+.quick-command-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.quick-command-editor-actions > button {
+  padding: 4px 9px;
+  border-radius: 2px;
+  color: var(--label);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.quick-command-editor-actions > button:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.quick-command-editor-actions > button.is-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.quick-command-editor-actions > button.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.quick-command-editor-actions > button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .terminal-inline-completion {
   position: absolute;
   z-index: 5;
   right: 229px;
-  bottom: 38px;
+  bottom: 7px;
   left: 7px;
   display: grid;
   max-width: 520px;
@@ -4316,10 +4458,6 @@ progress {
   width: auto;
 }
 
-.terminal-pane.has-quickbar .command-composer {
-  bottom: 32px;
-}
-
 .statusbar {
   min-height: 24px;
   padding: 0 7px;
@@ -4345,19 +4483,17 @@ progress {
   }
 }
 
-.terminal-stack:not(.split-single) .terminal-history-dock,
-.terminal-stack:not(.split-single) .terminal-quickbar {
+.terminal-stack:not(.split-single) .terminal-history-dock {
   display: none;
 }
 
-.terminal-stack:not(.split-single) .terminal-pane.has-history-dock .terminal-host,
-.terminal-stack:not(.split-single) .terminal-pane.has-history-dock .terminal-hex-view {
+.terminal-stack:not(.split-single)
+  .terminal-pane.has-history-dock
+  .terminal-host,
+.terminal-stack:not(.split-single)
+  .terminal-pane.has-history-dock
+  .terminal-hex-view {
   right: 5px;
-}
-
-.terminal-stack:not(.split-single) .terminal-pane.has-quickbar .terminal-host,
-.terminal-stack:not(.split-single) .terminal-pane.has-quickbar .terminal-hex-view {
-  bottom: 4px;
 }
 
 .terminal-stack:not(.split-single) .terminal-inline-completion {

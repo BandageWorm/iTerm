@@ -38,6 +38,7 @@ import { AppSettingsDialog } from "./components/AppSettingsDialog";
 import { SessionDialog } from "./components/SessionDialog";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { SessionTerminal } from "./components/SessionTerminal";
+import { QuickCommandBar } from "./components/QuickCommandBar";
 import {
   areSerialPortListsEqual,
   clearSerialBuffers,
@@ -99,6 +100,13 @@ import {
   loadWorkspaceSnapshot,
   saveWorkspaceSnapshot,
 } from "./lib/workspace";
+import { commandLineEnding } from "./lib/commandHistory";
+import {
+  importQuickCommand,
+  loadQuickCommands,
+  saveQuickCommands,
+  type QuickCommand,
+} from "./lib/quickCommands";
 import {
   createSessionProfileWithPreferences,
   loadAppPreferences,
@@ -353,6 +361,12 @@ export default function App() {
     initialWorkspace.sidebarOpen,
   );
   const [senderOpen, setSenderOpen] = useState(initialWorkspace.senderOpen);
+  const [quickBarOpen, setQuickBarOpen] = useState(
+    initialWorkspace.quickBarOpen,
+  );
+  const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(() =>
+    loadQuickCommands(),
+  );
   const [focusMode, setFocusMode] = useState(false);
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
@@ -670,6 +684,7 @@ export default function App() {
     saveWorkspaceSnapshot({
       sidebarOpen,
       senderOpen,
+      quickBarOpen,
       openProfileIds: sessions.map((session) => session.profileId),
       activeProfileId:
         sessions.find((session) => session.id === activeSessionId)?.profileId ??
@@ -682,6 +697,7 @@ export default function App() {
     });
   }, [
     activeSessionId,
+    quickBarOpen,
     senderOpen,
     sidebarOpen,
     splitMode,
@@ -1665,6 +1681,24 @@ export default function App() {
       ),
     );
     return count;
+  };
+
+  const updateQuickCommands = (next: QuickCommand[]) => {
+    setQuickCommands(next);
+    saveQuickCommands(next);
+  };
+
+  const sendQuickCommand = (command: QuickCommand) => {
+    if (!activeSession || !activeProfile) return;
+    const ending = commandLineEnding(
+      command.lineEnding,
+      activeProfile.terminal.enterKey,
+    );
+    void writeTerminalInput(
+      activeSession,
+      activeProfile,
+      `${command.payload}${ending}`,
+    );
   };
 
   const sendFiles = async (
@@ -3423,11 +3457,28 @@ export default function App() {
                   onFontSizeChange={(fontSize) =>
                     changeProfileFontSize(profile.id, fontSize)
                   }
-                  onOpenSender={() => setSenderOpen(true)}
+                  onCollectQuickCommand={(command) =>
+                    updateQuickCommands(
+                      importQuickCommand(quickCommands, command),
+                    )
+                  }
                 />
               );
             })}
           </div>
+
+          {quickBarOpen && (
+            <QuickCommandBar
+              commands={quickCommands}
+              connected={Boolean(
+                activeSession &&
+                  activeSession.state === "connected" &&
+                  !activeSession.transferActive,
+              )}
+              onCommandsChange={updateQuickCommands}
+              onSend={sendQuickCommand}
+            />
+          )}
 
           {senderOpen && sessions.length > 0 && activeProfile && (
             <SenderPane
@@ -3486,6 +3537,16 @@ export default function App() {
                       : t("shell.status.error")}
                 </span>
               )}
+              <button
+                className={quickBarOpen ? "is-active" : ""}
+                onClick={() => setQuickBarOpen((value) => !value)}
+                aria-expanded={quickBarOpen}
+                aria-label={t("quick.commands.toggle")}
+                title={t("quick.commands.toggle")}
+              >
+                <Zap size={15} />
+                {t("quick.commands.title")}
+              </button>
               <button
                 className={senderOpen ? "is-active" : ""}
                 onClick={() => setSenderOpen((value) => !value)}

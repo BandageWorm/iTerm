@@ -8,7 +8,6 @@ import {
   ScanText,
   Search,
   SendHorizontal,
-  Settings,
   Trash2,
   X,
   Zap,
@@ -55,8 +54,11 @@ import {
   type CommandHistoryEntry,
   type CommandSuggestion,
 } from "../lib/commandHistory";
-import { loadSenderPresets } from "../lib/senders";
-import type { SenderPreset } from "../lib/types";
+import {
+  hasQuickCommandPayload,
+  loadQuickCommands,
+  type QuickCommand,
+} from "../lib/quickCommands";
 import { colorizeSerialText } from "../lib/serialColors";
 import { resolveTerminalTheme } from "../lib/terminalTheme";
 
@@ -72,7 +74,7 @@ interface TerminalPaneProps {
   onClear: () => void;
   onInput: (value: string) => void;
   onFontSizeChange: (fontSize: number) => void;
-  onOpenSender: () => void;
+  onCollectQuickCommand: (command: string) => void;
 }
 
 export function TerminalPane({
@@ -87,7 +89,7 @@ export function TerminalPane({
   onClear,
   onInput,
   onFontSizeChange,
-  onOpenSender,
+  onCollectQuickCommand,
 }: TerminalPaneProps) {
   const { locale, t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -125,8 +127,8 @@ export function TerminalPane({
   const [commandHistory, setCommandHistory] = useState<CommandHistoryEntry[]>(
     () => loadCommandHistory(profile.id),
   );
-  const [quickCommands, setQuickCommands] = useState<SenderPreset[]>(
-    () => loadSenderPresets(profile.id, localStorage, t("sender.defaultName")),
+  const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(() =>
+    loadQuickCommands(),
   );
   const commandSuggestions = useMemo(
     () =>
@@ -220,9 +222,7 @@ export function TerminalPane({
 
   const refreshCommandSources = () => {
     setCommandHistory(loadCommandHistory(profile.id));
-    setQuickCommands(
-      loadSenderPresets(profile.id, localStorage, t("sender.defaultName")),
-    );
+    setQuickCommands(loadQuickCommands());
   };
 
   const openCommandComposer = () => {
@@ -240,21 +240,9 @@ export function TerminalPane({
     window.setTimeout(() => commandInputRef.current?.focus(), 0);
   };
 
-  const submitQuickCommand = (preset: SenderPreset) => {
-    if (
-      preset.mode !== "text" ||
-      !preset.payload.trim() ||
-      session.state !== "connected" ||
-      session.transferActive
-    ) {
-      return;
-    }
-    const ending = commandLineEnding(
-      preset.lineEnding,
-      profile.terminal.enterKey,
-    );
-    trackedInputRef.current(`${preset.payload}${ending}`);
-    window.setTimeout(() => terminalRef.current?.focus(), 0);
+  const collectHistoryCommand = (command: string) => {
+    onCollectQuickCommand(command);
+    setQuickCommands(loadQuickCommands());
   };
 
   const submitCommand = (
@@ -642,7 +630,7 @@ export function TerminalPane({
         commandOpen && commandSuggestions.length > 0
           ? "has-command-suggestions"
           : "",
-        active ? "has-history-dock has-quickbar" : "",
+        active ? "has-history-dock" : "",
       ].filter(Boolean).join(" ")}
       aria-label={t("terminal.label", { name: profile.name })}
       onMouseDown={onActivate}
@@ -791,56 +779,43 @@ export function TerminalPane({
             {commandHistory.length === 0 ? (
               <p>{t("terminal.history.empty")}</p>
             ) : (
-              commandHistory.slice(0, 200).map((entry) => (
-                <button
-                  key={entry.command}
-                  onClick={() => openHistoryCommand(entry.command)}
-                  title={entry.command}
-                >
-                  <code>{entry.command}</code>
-                  <small>{entry.useCount} uses</small>
-                </button>
-              ))
+              commandHistory.slice(0, 200).map((entry) => {
+                const collected = hasQuickCommandPayload(
+                  quickCommands,
+                  entry.command,
+                );
+                return (
+                  <div className="terminal-history-entry" key={entry.command}>
+                    <button
+                      onClick={() => openHistoryCommand(entry.command)}
+                      title={entry.command}
+                    >
+                      <code>{entry.command}</code>
+                      <small>{entry.useCount} uses</small>
+                    </button>
+                    <button
+                      className={collected ? "is-collected" : ""}
+                      disabled={collected}
+                      onClick={() => collectHistoryCommand(entry.command)}
+                      title={
+                        collected
+                          ? t("quick.commands.favorited")
+                          : t("quick.commands.favorite")
+                      }
+                      aria-label={
+                        collected
+                          ? t("quick.commands.favorited")
+                          : t("quick.commands.favorite")
+                      }
+                    >
+                      <Zap size={12} />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </aside>
-      )}
-      {active && (
-        <div
-          className="terminal-quickbar"
-          aria-label={t("terminal.quickbar.title")}
-        >
-          <span className="terminal-quickbar-title">
-            <Zap size={13} />
-            {t("terminal.quickbar.title")}
-          </span>
-          <div className="terminal-quickbar-commands">
-            {quickCommands
-              .filter(
-                (preset) => preset.mode === "text" && preset.payload.trim(),
-              )
-              .map((preset) => (
-                <button
-                  key={preset.id}
-                  disabled={
-                    session.state !== "connected" || session.transferActive
-                  }
-                  onClick={() => submitQuickCommand(preset)}
-                  title={preset.payload}
-                >
-                  {preset.name}
-                </button>
-              ))}
-          </div>
-          <button
-            className="terminal-quickbar-settings"
-            onClick={onOpenSender}
-            title={t("terminal.quickbar.configure")}
-            aria-label={t("terminal.quickbar.configure")}
-          >
-            <Settings size={14} />
-          </button>
-        </div>
       )}
       {commandOpen && (
         <div className="command-composer">

@@ -11,13 +11,14 @@ use tauri::State;
 const DATABASE_FILE_NAME: &str = "iterm-state.sqlite3";
 const CURRENT_SCHEMA_VERSION: i64 = 1;
 const MAX_VALUE_BYTES: usize = 10 * 1024 * 1024;
-const ALLOWED_STORAGE_KEYS: [&str; 6] = [
+const ALLOWED_STORAGE_KEYS: [&str; 7] = [
     "iterm.profiles.v1",
     "serialterm.profiles.v1",
     "iterm.preferences.v1",
     "iterm.workspace.v1",
     "iterm.senders.v1",
     "iterm.command-history.v1",
+    "iterm.quick-commands.v1",
 ];
 
 pub struct PersistentStore {
@@ -254,6 +255,33 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap();
         assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn accepts_every_allowed_storage_key() {
+        let store = PersistentStore::open_in_memory().expect("database should open");
+        let items: BTreeMap<String, String> = ALLOWED_STORAGE_KEYS
+            .iter()
+            .map(|key| (key.to_string(), format!(r#"{{"key":"{key}"}}"#)))
+            .collect();
+        store.save_items(items).unwrap();
+
+        let stored = store.load_items().unwrap();
+        assert_eq!(stored.len(), ALLOWED_STORAGE_KEYS.len());
+        assert_eq!(
+            stored["iterm.quick-commands.v1"],
+            "{\"key\":\"iterm.quick-commands.v1\"}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_storage_keys() {
+        let store = PersistentStore::open_in_memory().expect("database should open");
+        let error = store
+            .save_items(BTreeMap::from([("iterm.unknown.v1".into(), "{}".into())]))
+            .expect_err("unknown keys must be rejected");
+
+        assert!(error.contains("iterm.unknown.v1"));
     }
 
     #[test]

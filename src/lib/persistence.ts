@@ -8,6 +8,7 @@ export const PERSISTENT_STORAGE_KEYS = [
   "iterm.workspace.v1",
   "iterm.senders.v1",
   "iterm.command-history.v1",
+  "iterm.quick-commands.v1",
 ] as const;
 export const PERSISTENCE_ERROR_EVENT = "iterm:persistence-error";
 

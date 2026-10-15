@@ -4,6 +4,7 @@ import { setPersistentItem } from "./persistence";
 export interface WorkspaceSnapshot {
   sidebarOpen: boolean;
   senderOpen: boolean;
+  quickBarOpen: boolean;
   openProfileIds: string[];
   activeProfileId: string | null;
   splitMode: SplitMode;
@@ -15,6 +16,7 @@ const WORKSPACE_STORAGE_KEY = "iterm.workspace.v1";
 export const DEFAULT_WORKSPACE_SNAPSHOT: WorkspaceSnapshot = {
   sidebarOpen: true,
   senderOpen: true,
+  quickBarOpen: true,
   openProfileIds: [],
   activeProfileId: null,
   splitMode: "single",
@@ -49,6 +51,10 @@ export function loadWorkspaceSnapshot(
         typeof parsed.senderOpen === "boolean"
           ? parsed.senderOpen
           : DEFAULT_WORKSPACE_SNAPSHOT.senderOpen,
+      quickBarOpen:
+        typeof parsed.quickBarOpen === "boolean"
+          ? parsed.quickBarOpen
+          : DEFAULT_WORKSPACE_SNAPSHOT.quickBarOpen,
       openProfileIds: Array.isArray(parsed.openProfileIds)
         ? parsed.openProfileIds.filter(
             (profileId): profileId is string => typeof profileId === "string",

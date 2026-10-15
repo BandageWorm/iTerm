@@ -200,3 +200,149 @@ test("清除本地应用数据并恢复默认设置", async ({ page }) => {
     )
     .not.toContain('"locale":"en-US"');
 });
+
+test("常用命令栏支持新增、右键编辑、收藏、发送与收起", async ({ page }) => {
+  await openFreshApp(page, "en-US");
+
+  const bar = page.getByRole("toolbar", { name: "Quick command bar" });
+  await expect(bar).toBeVisible();
+  await expect(
+    page.getByRole("toolbar", { name: "Quick command bar" }),
+  ).toHaveCount(1);
+
+  await bar.getByRole("button", { name: "New quick command" }).click();
+  const createDialog = page.getByRole("dialog", {
+    name: "New quick command",
+  });
+  // 新增入口在最右侧，浮层不得被窗口右缘裁掉
+  const editorBox = await createDialog.boundingBox();
+  expect(editorBox).not.toBeNull();
+  expect(editorBox!.x + editorBox!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
+  await createDialog.getByLabel("Name", { exact: true }).fill("List files");
+  await createDialog.getByLabel("Content", { exact: true }).fill("ls -l");
+  await createDialog.getByRole("button", { name: "Save" }).click();
+
+  const command = bar.getByRole("button", { name: "List files", exact: true });
+  await expect(command).toBeVisible();
+  await expect(command).toHaveAttribute("aria-disabled", "true");
+
+  await page.getByTitle("New session (Ctrl/⌘+N)").first().click();
+  const session = page.getByRole("dialog", { name: "Serial Session Settings" });
+  await session.getByLabel("Session name").fill("Quick Bar");
+  await session.getByRole("button", { name: "Save & Connect" }).click();
+  await expect(page.locator(".statusbar strong")).toHaveText("Connected", {
+    timeout: 5_000,
+  });
+  await expect(command).not.toHaveAttribute("aria-disabled", "true");
+
+  await expect(page.locator(".statusbar")).toContainText("TX 0 B");
+  await command.click();
+  await expect(page.locator(".statusbar")).not.toContainText("TX 0 B");
+  await expect(page.locator(".terminal-history-entry")).toHaveCount(0);
+
+  await command.click({ button: "right" });
+  const actions = page.getByRole("menu", { name: "Quick command actions" });
+  await expect(actions).toBeVisible();
+  await actions.getByRole("menuitem", { name: "Edit…" }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit quick command" });
+  await editDialog.getByLabel("Name", { exact: true }).fill("List directory");
+  await editDialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    bar.getByRole("button", { name: "List directory", exact: true }),
+  ).toBeVisible();
+
+  const terminal = page.getByRole("region", { name: "Quick Bar terminal" });
+  await terminal.click();
+  await page.keyboard.press("Control+Shift+K");
+  const commandInput = page.getByLabel("Command input");
+  await commandInput.fill("help");
+  await commandInput.press("Enter");
+
+  const historyEntry = page.locator(".terminal-history-entry").first();
+  await expect(historyEntry.locator("code")).toHaveText("help");
+  await historyEntry
+    .getByRole("button", { name: "Save as quick command", exact: true })
+    .click();
+  await expect(
+    bar.getByRole("button", { name: "help", exact: true }),
+  ).toBeVisible();
+  await expect(
+    historyEntry.getByRole("button", {
+      name: "Saved as quick command",
+      exact: true,
+    }),
+  ).toBeDisabled();
+
+  const viewMenu = () => page.getByRole("button", { name: "View", exact: true });
+  await viewMenu().click();
+  await page.getByRole("menuitemcheckbox", { name: "Sender Pane" }).click();
+  await expect(page.getByRole("region", { name: "Sender pane" })).toBeHidden();
+  await expect(bar).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Quick command bar toggle" })
+    .click();
+  await expect(bar).toBeHidden();
+  await viewMenu().click();
+  await page.getByRole("menuitemcheckbox", { name: "Sender Pane" }).click();
+  await expect(page.getByRole("region", { name: "Sender pane" })).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByRole("toolbar", { name: "Quick command bar" }),
+  ).toBeHidden();
+});
+
+test("常用命令栏跨会话常驻并在无连接时禁用", async ({ page }) => {
+  await openFreshApp(page, "en-US");
+
+  const bar = page.getByRole("toolbar", { name: "Quick command bar" });
+  await bar.getByRole("button", { name: "New quick command" }).click();
+  const createDialog = page.getByRole("dialog", {
+    name: "New quick command",
+  });
+  await createDialog.getByLabel("Content", { exact: true }).fill("df -h");
+  await createDialog.getByRole("button", { name: "Save" }).click();
+
+  const command = bar.getByRole("button", { name: "df -h", exact: true });
+  await expect(command).toBeVisible();
+  await expect(command).toHaveAttribute("aria-disabled", "true");
+
+  // 未连接会话时命令按钮不可发送，但右键菜单必须仍然可用。
+  // force 只是为了绕过 Playwright 对 aria-disabled 的动作检查，事件仍由浏览器真实派发。
+  await command.click({ button: "right", force: true });
+  const actions = page.getByRole("menu", { name: "Quick command actions" });
+  await expect(actions).toBeVisible();
+  await expect(actions.getByRole("menuitem", { name: "Send" })).toBeDisabled();
+  await actions.getByRole("menuitem", { name: "Edit…" }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit quick command" });
+  await editDialog.getByLabel("Name", { exact: true }).fill("Disk space");
+  await editDialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    bar.getByRole("button", { name: "Disk space", exact: true }),
+  ).toBeVisible();
+
+  for (const name of ["Split A", "Split B"]) {
+    await page.getByTitle("New session (Ctrl/⌘+N)").first().click();
+    const session = page.getByRole("dialog", {
+      name: "Serial Session Settings",
+    });
+    await session.getByLabel("Session name").fill(name);
+    await session.getByRole("button", { name: "Save & Connect" }).click();
+    await expect(page.locator(".statusbar strong")).toHaveText("Connected", {
+      timeout: 5_000,
+    });
+  }
+
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  await page
+    .getByRole("menuitemcheckbox", { name: "Split Left/Right" })
+    .click();
+  await expect(page.locator(".terminal-stack.split-horizontal")).toBeVisible();
+  await expect(
+    page.getByRole("toolbar", { name: "Quick command bar" }),
+  ).toHaveCount(1);
+  await expect(bar).toBeVisible();
+});

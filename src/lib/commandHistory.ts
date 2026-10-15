@@ -1,5 +1,10 @@
 import { setPersistentItem } from "./persistence";
-import type { LineEnding, SenderPreset } from "./types";
+import {
+  quickCommandLabel,
+  type QuickCommand,
+  type QuickCommandLineEnding,
+} from "./quickCommands";
+import type { LineEnding } from "./types";
 
 const COMMAND_HISTORY_STORAGE_KEY = "iterm.command-history.v1";
 const MAX_COMMANDS_PER_PROFILE = 1_000;
@@ -16,7 +21,7 @@ export interface CommandSuggestion {
   command: string;
   label: string;
   source: "history" | "quick";
-  lineEnding?: LineEnding;
+  lineEnding?: QuickCommandLineEnding;
   useCount: number;
 }
 
@@ -103,7 +108,7 @@ export function recordCommand(
 export function buildCommandSuggestions(
   query: string,
   history: CommandHistoryEntry[],
-  quickCommands: SenderPreset[],
+  quickCommands: QuickCommand[],
   limit = 8,
 ): CommandSuggestion[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -127,11 +132,11 @@ export function buildCommandSuggestions(
 
   const suggestions: CommandSuggestion[] = [
     ...quickCommands.flatMap((preset) => {
-      if (preset.mode !== "text" || !preset.payload.trim()) return [];
+      if (!preset.payload.trim()) return [];
       return [{
         id: `quick:${preset.id}`,
         command: preset.payload,
-        label: preset.name,
+        label: quickCommandLabel(preset),
         source: "quick" as const,
         lineEnding: preset.lineEnding,
         useCount: 0,
