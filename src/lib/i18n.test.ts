@@ -15,6 +15,19 @@ describe("internationalization", () => {
     ).toBe("12 / 500 structured events currently retained");
   });
 
+  it("labels the completion accept hint and history bar in both locales", () => {
+    expect(createTranslator("zh-CN")("terminal.command.acceptHint")).toBe(
+      "选择后回车补全",
+    );
+    expect(createTranslator("en-US")("terminal.command.acceptHint")).toBe(
+      "Select, then Enter",
+    );
+    expect(createTranslator("zh-CN")("menu.view.history")).toBe("历史命令栏");
+    expect(createTranslator("en-US")("menu.view.history")).toBe(
+      "Command History Bar",
+    );
+  });
+
   it("resolves the explicitly saved locale", () => {
     expect(resolveLocale("zh-CN", "en-US")).toBe("zh-CN");
     expect(resolveLocale("en-US", "zh-CN")).toBe("en-US");

@@ -18,6 +18,8 @@ export interface AppPreferences {
   locale: AppLocale;
   theme: ThemeMode;
   confirmActiveSessionClose: boolean;
+  /** 开启后终端内右键有选区则复制、无选区则粘贴；Shift+右键始终打开菜单。 */
+  rightClickCopyPaste: boolean;
   defaultProtocol: SessionProtocol;
   sessionDefaults: {
     terminal: TerminalConfig;
@@ -31,6 +33,7 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   locale: "zh-CN",
   theme: "light",
   confirmActiveSessionClose: true,
+  rightClickCopyPaste: false,
   defaultProtocol: "serial",
   sessionDefaults: {
     terminal: {
@@ -66,6 +69,10 @@ export function loadAppPreferences(
         typeof parsed?.confirmActiveSessionClose === "boolean"
           ? parsed.confirmActiveSessionClose
           : DEFAULT_APP_PREFERENCES.confirmActiveSessionClose,
+      rightClickCopyPaste:
+        typeof parsed?.rightClickCopyPaste === "boolean"
+          ? parsed.rightClickCopyPaste
+          : DEFAULT_APP_PREFERENCES.rightClickCopyPaste,
       defaultProtocol:
         defaultProtocol === "serial" ||
         defaultProtocol === "ssh" ||

@@ -19,9 +19,15 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { formatHexDump, timestampReceivedText } from "../lib/receive";
+import {
+  resolveCompletionPlacement,
+  type CompletionPlacement,
+} from "../lib/completionPlacement";
+import { resolveRightClickAction } from "../lib/terminalInteraction";
 import type { ResolvedTheme } from "../lib/preferences";
 import {
   installUnicode11,
+  canCompleteFromBuffer,
   clampTerminalFontSize,
   DEFAULT_TERMINAL_FONT_SIZE,
   isDuplicateSpecialKeyPress,
@@ -29,6 +35,7 @@ import {
   MAX_TERMINAL_FONT_SIZE,
   mapTerminalSpecialKey,
   MIN_TERMINAL_FONT_SIZE,
+  resolveCompletionAcceptAction,
   TERMINAL_CONVERT_EOL,
 } from "../lib/terminal";
 import type {
@@ -41,8 +48,10 @@ import { useI18n } from "../lib/i18n";
 import {
   executeTerminalCommand,
   clampContextMenuPosition,
+  requestTerminalSearch,
   TERMINAL_COMMAND_EVENT,
   TERMINAL_SEARCH_EVENT,
+  type TerminalSearchRequest,
   type TerminalUiCommand,
 } from "../lib/uiCommands";
 import {
@@ -69,6 +78,8 @@ interface TerminalPaneProps {
   visible: boolean;
   receiveMode: ReceiveMode;
   theme: ResolvedTheme;
+  rightClickCopyPaste: boolean;
+  showHistory: boolean;
   onActivate: () => void;
   onResize: (cols: number, rows: number) => void;
   onClear: () => void;
@@ -84,6 +95,8 @@ export function TerminalPane({
   visible,
   receiveMode,
   theme,
+  rightClickCopyPaste,
+  showHistory,
   onActivate,
   onResize,
   onClear,
@@ -109,7 +122,16 @@ export function TerminalPane({
   const startsNewLineRef = useRef(true);
   const typedCommandRef = useRef("");
   const inlineSuggestionsRef = useRef<CommandSuggestion[]>([]);
+  const completableIndexesRef = useRef<number[]>([]);
   const activeInlineSuggestionRef = useRef(-1);
+  const searchRequestRef = useRef(0);
+  const searchSourceRef = useRef<object>({});
+  const [completionBox, setCompletionBox] = useState<{
+    placement: CompletionPlacement;
+    top: number | null;
+    bottom: number | null;
+    maxHeight: number;
+  } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchFound, setSearchFound] = useState<boolean | null>(null);
@@ -155,6 +177,16 @@ export function TerminalPane({
       liveCommandValue,
       quickCommands,
     ],
+  );
+  // 只有能把输入行再补一截的候选才允许被选中，否则 Tab 会"选中了却没反应"。
+  const completableIndexes = useMemo(
+    () =>
+      inlineSuggestions.flatMap((suggestion, index) =>
+        canCompleteFromBuffer(suggestion.command, liveCommandValue)
+          ? [index]
+          : [],
+      ),
+    [inlineSuggestions, liveCommandValue],
   );
   const hexDump = useMemo(
     () =>
@@ -207,6 +239,7 @@ export function TerminalPane({
     inputRef.current(value);
   };
   inlineSuggestionsRef.current = inlineSuggestions;
+  completableIndexesRef.current = completableIndexes;
   activeInlineSuggestionRef.current = activeInlineSuggestion;
   resizeRef.current = onResize;
   fontSizeRef.current = profile.terminal.fontSize;
@@ -328,6 +361,7 @@ export function TerminalPane({
         (event.metaKey && shortcutKey === "v") ||
         (event.ctrlKey && event.shiftKey && shortcutKey === "v");
       if (event.type === "keydown" && (copyShortcut || pasteShortcut)) {
+        event.preventDefault();
         void executeTerminalCommand(
           copyShortcut ? "copy" : "paste",
           terminal,
@@ -339,16 +373,17 @@ export function TerminalPane({
         (event.metaKey && shortcutKey === "k") ||
         (event.ctrlKey && event.shiftKey && shortcutKey === "k");
       if (event.type === "keydown" && commandShortcut) {
+        event.preventDefault();
         openCommandComposer();
         return false;
       }
-      if (
-        event.type === "keydown" &&
-        (event.ctrlKey || event.metaKey) &&
-        shortcutKey === "f"
-      ) {
-        setSearchOpen(true);
-        window.setTimeout(() => searchInputRef.current?.focus(), 0);
+      if ((event.ctrlKey || event.metaKey) && shortcutKey === "f") {
+        if (event.type === "keydown") {
+          event.preventDefault();
+          requestTerminalSearch({ source: searchSourceRef.current });
+        }
+        // Keep the keyup from returning focus to the terminal, which would
+        // steal it back from the search input opened by the keydown.
         return false;
       }
       if (
@@ -359,13 +394,18 @@ export function TerminalPane({
         inlineSuggestionsRef.current.length > 0
       ) {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          const candidates = completableIndexesRef.current;
+          // 没有可补全的候选时把 ↑/↓ 还给 shell，历史召回不受影响。
+          if (candidates.length === 0) return true;
           event.preventDefault();
-          const count = inlineSuggestionsRef.current.length;
-          const current = activeInlineSuggestionRef.current;
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          const position = candidates.indexOf(
+            activeInlineSuggestionRef.current,
+          );
           const next =
-            event.key === "ArrowDown"
-              ? (current + 1 + count) % count
-              : (current - 1 + count) % count;
+            position < 0
+              ? candidates[step > 0 ? 0 : candidates.length - 1]
+              : candidates[(position + step + candidates.length) % candidates.length];
           activeInlineSuggestionRef.current = next;
           setActiveInlineSuggestion(next);
           return false;
@@ -376,35 +416,33 @@ export function TerminalPane({
           setActiveInlineSuggestion(-1);
           return false;
         }
-        if (event.key === "Tab") {
-          const suggestion =
-            inlineSuggestionsRef.current[
-              activeInlineSuggestionRef.current >= 0
-                ? activeInlineSuggestionRef.current
-                : 0
-            ];
-          const current = typedCommandRef.current;
-          if (
-            suggestion &&
-            suggestion.command
-              .toLocaleLowerCase()
-              .startsWith(current.toLocaleLowerCase()) &&
-            suggestion.command.length > current.length
-          ) {
+        // 回车负责接受联想，Tab 永远交给会话。
+        if (event.key === "Enter") {
+          const action = resolveCompletionAcceptAction({
+            selectedIndex: activeInlineSuggestionRef.current,
+            buffer: typedCommandRef.current,
+            suggestions: inlineSuggestionsRef.current,
+          });
+          if (action.kind === "accept") {
             event.preventDefault();
-            trackedInputRef.current(suggestion.command.slice(current.length));
+            trackedInputRef.current(action.remainder);
             setActiveInlineSuggestion(-1);
+            setInlineCompletionDismissed(true);
             return false;
           }
         }
       }
-      if (
-        profile.protocol === "serial" &&
-        isTerminalCompletionTab(event)
-      ) {
-        event.preventDefault();
-        trackedInputRef.current("\t");
-        return false;
+      if (isTerminalCompletionTab(event)) {
+        // 把 Tab 交给会话的同时收起浮层：shell 随即会打印自己的补全列表，
+        // 浮层留在原地正好把它盖住。
+        setInlineCompletionDismissed(true);
+        setActiveInlineSuggestion(-1);
+        if (profile.protocol === "serial") {
+          event.preventDefault();
+          trackedInputRef.current("\t");
+          return false;
+        }
+        return true;
       }
       const mappedInput = mapTerminalSpecialKey(event, profile.terminal);
       if (mappedInput !== null) {
@@ -524,12 +562,97 @@ export function TerminalPane({
   }, [session.lastChunk]);
 
   useEffect(() => {
+    if (!searchOpen) return;
+    searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  const suggestionCount = inlineSuggestions.length;
+  useEffect(() => {
+    if (suggestionCount === 0) {
+      setCompletionBox(null);
+      return;
+    }
+    const terminal = terminalRef.current;
+    const host = hostRef.current;
+    if (!terminal || !host) return;
+
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const pane = host.parentElement;
+      if (!pane) return;
+      const buffer = terminal.buffer.active;
+      const rows = Math.max(1, terminal.rows);
+      const screen = host.querySelector<HTMLElement>(".xterm-screen");
+      const screenHeight =
+        screen?.getBoundingClientRect().height ?? host.clientHeight;
+      const hostRect = host.getBoundingClientRect();
+      // 首次测量可能早于 xterm 布局完成，此时退回按宿主高度估算行高。
+      const rowHeight =
+        screenHeight > 0 ? screenHeight / rows : hostRect.height / rows;
+      if (rowHeight <= 0) return;
+      const paneRect = pane.getBoundingClientRect();
+      const placement = resolveCompletionPlacement({
+        rows,
+        rowHeight,
+        // xterm 的 cursorY 已经是视口相对行号（0 = baseY 那一行），
+        // 再减 baseY 会得到负值并被夹到 0，浮层就会被误判到面板顶部。
+        cursorRow: Math.min(Math.max(0, buffer.cursorY), rows - 1),
+        paneHeight: hostRect.height,
+      });
+      const next = {
+        placement: placement.placement,
+        top:
+          placement.placement === "below"
+            ? Math.round(placement.offset + (hostRect.top - paneRect.top))
+            : null,
+        bottom:
+          placement.placement === "above"
+            ? Math.round(placement.offset + (paneRect.bottom - hostRect.bottom))
+            : null,
+        maxHeight: Math.round(placement.maxHeight),
+      };
+      setCompletionBox((current) =>
+        current &&
+        current.placement === next.placement &&
+        current.top === next.top &&
+        current.bottom === next.bottom &&
+        current.maxHeight === next.maxHeight
+          ? current
+          : next,
+      );
+    };
+    const schedule = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+
+    schedule();
+    // onRender 让持续输出导致的光标行变化也能即时反映到位置，
+    // 否则浮层会停在一次旧测量得到的锚点上。
+    const disposables = [
+      terminal.onRender(schedule),
+      terminal.onCursorMove(schedule),
+      terminal.onResize(schedule),
+      terminal.onScroll(schedule),
+    ];
+    const observer = new ResizeObserver(schedule);
+    observer.observe(host);
+    return () => {
+      for (const disposable of disposables) disposable.dispose();
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [profile.terminal.fontSize, suggestionCount]);
+
+  useEffect(() => {
     if (!visible) return;
-    window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       fitRef.current?.fit();
-      if (active) terminalRef.current?.focus();
+      if (active && !searchOpen) terminalRef.current?.focus();
     });
-  }, [active, visible]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, searchOpen, visible]);
 
   useEffect(() => {
     if (session.state !== "connected" || !terminalRef.current) return;
@@ -537,10 +660,22 @@ export function TerminalPane({
   }, [session.state]);
 
   useEffect(() => {
-    if (!active || !visible) return;
-    const openSearch = () => {
+    if (!visible) return;
+    const openSearch = (event: Event) => {
+      const detail = (event as CustomEvent<TerminalSearchRequest>).detail;
+      if (typeof detail?.requestId === "number") {
+        if (detail.requestId <= searchRequestRef.current) return;
+        searchRequestRef.current = detail.requestId;
+      }
+      const shouldOpen =
+        detail?.source === undefined
+          ? active
+          : detail.source === searchSourceRef.current;
+      if (!shouldOpen || receiveMode !== "text") {
+        setSearchOpen(false);
+        return;
+      }
       setSearchOpen(true);
-      window.setTimeout(() => searchInputRef.current?.focus(), 0);
     };
     window.addEventListener(TERMINAL_SEARCH_EVENT, openSearch);
     const executeCommand = (event: Event) => {
@@ -553,12 +688,14 @@ export function TerminalPane({
         (value) => trackedInputRef.current(value),
       ).catch(() => undefined);
     };
-    window.addEventListener(TERMINAL_COMMAND_EVENT, executeCommand);
+    if (active) {
+      window.addEventListener(TERMINAL_COMMAND_EVENT, executeCommand);
+    }
     return () => {
       window.removeEventListener(TERMINAL_SEARCH_EVENT, openSearch);
       window.removeEventListener(TERMINAL_COMMAND_EVENT, executeCommand);
     };
-  }, [active, session.state, visible]);
+  }, [active, receiveMode, session.state, visible]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -630,23 +767,54 @@ export function TerminalPane({
         commandOpen && commandSuggestions.length > 0
           ? "has-command-suggestions"
           : "",
-        active ? "has-history-dock" : "",
+        active && showHistory ? "has-history-dock" : "",
       ].filter(Boolean).join(" ")}
       aria-label={t("terminal.label", { name: profile.name })}
       onMouseDown={onActivate}
       onContextMenu={(event) => {
         event.preventDefault();
         onActivate();
-        const position = clampContextMenuPosition(
-          event.clientX,
-          event.clientY,
-          window.innerWidth,
-          window.innerHeight,
-        );
-        setContextMenu({
-          ...position,
-          hasSelection: terminalRef.current?.hasSelection() ?? false,
+        const terminal = terminalRef.current;
+        const openContextMenu = () => {
+          const position = clampContextMenuPosition(
+            event.clientX,
+            event.clientY,
+            window.innerWidth,
+            window.innerHeight,
+          );
+          setContextMenu({
+            ...position,
+            hasSelection: terminal?.hasSelection() ?? false,
+          });
+        };
+        const action = resolveRightClickAction({
+          enabled: rightClickCopyPaste,
+          shiftKey: event.shiftKey,
+          hasSelection: terminal?.hasSelection() ?? false,
+          canPaste: session.state === "connected" && !session.transferActive,
         });
+        if (!terminal || action === "menu") {
+          openContextMenu();
+          return;
+        }
+        const send = (value: string) => trackedInputRef.current(value);
+        if (action === "copy") {
+          void executeTerminalCommand("copy", terminal, send)
+            .then((copied) => {
+              if (!copied) {
+                openContextMenu();
+                return;
+              }
+              terminal.clearSelection();
+            })
+            .catch(() => openContextMenu());
+          return;
+        }
+        void executeTerminalCommand("paste", terminal, send)
+          .then((pasted) => {
+            if (!pasted) openContextMenu();
+          })
+          .catch(() => openContextMenu());
       }}
       onWheel={(event) => {
         if (!event.ctrlKey && !event.metaKey) return;
@@ -732,40 +900,63 @@ export function TerminalPane({
       {active && !commandOpen && inlineSuggestions.length > 0 && (
         <div
           className="terminal-inline-completion"
+          data-placement={completionBox?.placement ?? "above"}
+          style={{
+            top: completionBox?.top ?? "auto",
+            bottom:
+              completionBox?.bottom ?? (completionBox ? "auto" : 7),
+            maxHeight: completionBox?.maxHeight,
+            visibility: completionBox ? "visible" : "hidden",
+          }}
           role="listbox"
           aria-label={t("terminal.command.suggestions")}
         >
-          {inlineSuggestions.map((suggestion, index) => (
-            <button
-              key={suggestion.id}
-              className={index === activeInlineSuggestion ? "is-active" : ""}
-              role="option"
-              aria-selected={index === activeInlineSuggestion}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => openHistoryCommand(suggestion.command)}
-              onDoubleClick={() => submitCommand(suggestion)}
-            >
-              {suggestion.source === "quick" ? (
-                <Zap size={13} />
-              ) : (
-                <Clock3 size={13} />
-              )}
-              <span>{suggestion.label}</span>
-              <small>
-                {suggestion.source === "quick"
-                  ? t("terminal.command.quick")
-                  : `${suggestion.useCount} uses`}
-              </small>
-            </button>
-          ))}
+          <div className="terminal-inline-completion-list">
+            {inlineSuggestions.map((suggestion, index) => {
+              const selectable = completableIndexes.includes(index);
+              return (
+                <button
+                  key={suggestion.id}
+                  className={[
+                    selectable ? "" : "is-static",
+                    index === activeInlineSuggestion ? "is-active" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  role="option"
+                  aria-selected={index === activeInlineSuggestion}
+                  aria-disabled={!selectable}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => openHistoryCommand(suggestion.command)}
+                  onDoubleClick={() => submitCommand(suggestion)}
+                >
+                  {suggestion.source === "quick" ? (
+                    <Zap size={13} />
+                  ) : (
+                    <Clock3 size={13} />
+                  )}
+                  <span>{suggestion.label}</span>
+                  <small>
+                    {suggestion.source === "quick"
+                      ? t("terminal.command.quick")
+                      : `${suggestion.useCount} uses`}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
           <footer>
-            <span>{liveCommandValue}</span>
-            <kbd>Up/Down</kbd>
-            <kbd>Tab</kbd>
+            <span className="terminal-inline-completion-query">
+              {liveCommandValue}
+            </span>
+            <kbd>↑↓</kbd>
+            <span className="terminal-inline-completion-hint">
+              {t("terminal.command.acceptHint")}
+            </span>
           </footer>
         </div>
       )}
-      {active && (
+      {active && showHistory && (
         <aside
           className="terminal-history-dock"
           aria-label={t("terminal.history.title")}

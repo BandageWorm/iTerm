@@ -6,9 +6,11 @@ import {
   clampTerminalFontSize,
   installUnicode11,
   isDuplicateSpecialKeyPress,
+  canCompleteFromBuffer,
   isTerminalCompletionTab,
   mapTerminalSpecialKey,
   resetTerminal,
+  resolveCompletionAcceptAction,
   TERMINAL_CONVERT_EOL,
 } from "./terminal";
 
@@ -185,5 +187,61 @@ describe("terminal line endings", () => {
     ).toEqual(["first", "second", "third"]);
     expect(terminal.buffer.active.cursorX).toBe(5);
     terminal.dispose();
+  });
+});
+
+describe("completion accept ownership", () => {
+  const suggestions = [{ command: "ifconfig" }, { command: "ls -la" }];
+
+  it("only treats candidates that extend the input line as completable", () => {
+    expect(canCompleteFromBuffer("ifconfig", "ifc")).toBe(true);
+    // 与输入完全一致：没有字符可补，接受它只会像是键失灵。
+    expect(canCompleteFromBuffer("ifconfig", "ifconfig")).toBe(false);
+    expect(canCompleteFromBuffer("ls -la", "ifc")).toBe(false);
+    expect(canCompleteFromBuffer("IFCONFIG", "ifc")).toBe(true);
+  });
+
+  it("hands Enter back to the session when nothing is selected", () => {
+    expect(
+      resolveCompletionAcceptAction({
+        selectedIndex: -1,
+        buffer: "ifc",
+        suggestions,
+      }),
+    ).toEqual({ kind: "passthrough" });
+  });
+
+  it("accepts the selected candidate and reports the remainder", () => {
+    expect(
+      resolveCompletionAcceptAction({
+        selectedIndex: 0,
+        buffer: "IFC",
+        suggestions,
+      }),
+    ).toEqual({ kind: "accept", remainder: "onfig" });
+  });
+
+  it("lets Enter run the command when the selection adds nothing", () => {
+    expect(
+      resolveCompletionAcceptAction({
+        selectedIndex: 1,
+        buffer: "ifc",
+        suggestions,
+      }),
+    ).toEqual({ kind: "passthrough" });
+    expect(
+      resolveCompletionAcceptAction({
+        selectedIndex: 9,
+        buffer: "ifc",
+        suggestions,
+      }),
+    ).toEqual({ kind: "passthrough" });
+    expect(
+      resolveCompletionAcceptAction({
+        selectedIndex: 0,
+        buffer: "ifconfig",
+        suggestions,
+      }),
+    ).toEqual({ kind: "passthrough" });
   });
 });

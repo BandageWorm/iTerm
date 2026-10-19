@@ -182,6 +182,22 @@ export function AppSettingsDialog({
                   {t("settings.closeConfirmation.detail")}
                 </label>
               </div>
+              <div className="field-row">
+                <span>{t("settings.rightClickCopyPaste")}</span>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={draft.rightClickCopyPaste}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        rightClickCopyPaste: event.target.checked,
+                      }))
+                    }
+                  />
+                  {t("settings.rightClickCopyPaste.detail")}
+                </label>
+              </div>
             </div>
           </section>
 

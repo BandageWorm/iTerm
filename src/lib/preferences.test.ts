@@ -43,6 +43,20 @@ describe("application preferences", () => {
     ).toBe("zh-CN");
   });
 
+  it("defaults the right-click copy/paste shortcut to off", () => {
+    expect(loadAppPreferences({ getItem: () => null }).rightClickCopyPaste).toBe(
+      false,
+    );
+    expect(
+      loadAppPreferences({ getItem: () => '{"rightClickCopyPaste":true}' })
+        .rightClickCopyPaste,
+    ).toBe(true);
+    expect(
+      loadAppPreferences({ getItem: () => '{"rightClickCopyPaste":"yes"}' })
+        .rightClickCopyPaste,
+    ).toBe(false);
+  });
+
   it("rejects unsupported default terminal key mappings", () => {
     const loaded = loadAppPreferences({
       getItem: () =>

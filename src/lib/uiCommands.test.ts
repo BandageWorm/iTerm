@@ -24,10 +24,25 @@ describe("UI commands", () => {
     const dispatchEvent = vi.fn((_event: Event) => true);
     const target = { dispatchEvent };
 
-    requestTerminalSearch(target);
+    requestTerminalSearch({ target });
 
     expect(dispatchEvent).toHaveBeenCalledOnce();
     expect(dispatchEvent.mock.calls[0]?.[0].type).toBe(TERMINAL_SEARCH_EVENT);
+  });
+
+  it("assigns an increasing request id to each search request", () => {
+    const dispatchEvent = vi.fn((_event: Event) => true);
+    const target = { dispatchEvent };
+
+    const first = requestTerminalSearch({ target });
+    const second = requestTerminalSearch({ target });
+
+    expect(second).toBeGreaterThan(first);
+    const events = dispatchEvent.mock.calls.map(
+      ([event]) => event as CustomEvent<{ requestId: number }>,
+    );
+    expect(events[0]?.detail.requestId).toBe(first);
+    expect(events[1]?.detail.requestId).toBe(second);
   });
 
   it("dispatches terminal edit commands", () => {

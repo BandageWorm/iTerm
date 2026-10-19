@@ -8,7 +8,7 @@ import { getProcessTmuxClient, subscribeProcessTmuxClients } from "../lib/remote
 import { useI18n } from "../lib/i18n";
 import { installUnicode11, mapTerminalSpecialKey, clampTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../lib/terminal";
 import { resolveTerminalTheme } from "../lib/terminalTheme";
-import { executeTerminalCommand, TERMINAL_COMMAND_EVENT, TERMINAL_SEARCH_EVENT, type TerminalUiCommand } from "../lib/uiCommands";
+import { executeTerminalCommand, requestTerminalSearch, TERMINAL_COMMAND_EVENT, TERMINAL_SEARCH_EVENT, type TerminalUiCommand } from "../lib/uiCommands";
 import { EMPTY_TMUX_SNAPSHOT, type TmuxClient, type TmuxPane } from "../lib/tmux";
 
 type Props = ComponentProps<typeof TerminalPane> & {
@@ -122,6 +122,8 @@ function TmuxTerminal({ pane, client, profile, theme, active, visible, width, he
   const terminalRef = useRef<Terminal | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const outputRevision = useRef(-1);
+  const searchRequestRef = useRef(0);
+  const searchSourceRef = useRef<object>({});
   const [query, setQuery] = useState<string | null>(null);
   const latest = useRef({ pane, onError, onInput, profile, onFontSizeChange });
   latest.current = { pane, onError, onInput, profile, onFontSizeChange };
@@ -160,7 +162,7 @@ function TmuxTerminal({ pane, client, profile, theme, active, visible, width, he
       }
       if (event.type === "keydown" && (event.ctrlKey || event.metaKey) && key === "f") {
         event.preventDefault();
-        setQuery("");
+        requestTerminalSearch({ source: searchSourceRef.current });
         return false;
       }
       const copy = (event.metaKey && key === "c" && terminal.hasSelection()) || (event.ctrlKey && event.shiftKey && key === "c");
@@ -210,15 +212,26 @@ function TmuxTerminal({ pane, client, profile, theme, active, visible, width, he
   }, [pane.width, pane.height]);
 
   useEffect(() => {
-    if (!active || !visible) return;
-    terminalRef.current?.focus();
+    if (!visible) return;
+    if (active) terminalRef.current?.focus();
     const command = (event: Event) => {
       if (!terminalRef.current) return;
       void executeTerminalCommand((event as CustomEvent<TerminalUiCommand>).detail, terminalRef.current, send)
         .catch((reason: unknown) => onError(String(reason)));
     };
-    const search = () => setQuery("");
-    window.addEventListener(TERMINAL_COMMAND_EVENT, command);
+    const search = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: number; source?: unknown }>).detail;
+      if (typeof detail?.requestId === "number") {
+        if (detail.requestId <= searchRequestRef.current) return;
+        searchRequestRef.current = detail.requestId;
+      }
+      const shouldOpen =
+        detail?.source === undefined ? active : detail.source === searchSourceRef.current;
+      setQuery(shouldOpen ? "" : null);
+    };
+    if (active) {
+      window.addEventListener(TERMINAL_COMMAND_EVENT, command);
+    }
     window.addEventListener(TERMINAL_SEARCH_EVENT, search);
     return () => {
       window.removeEventListener(TERMINAL_COMMAND_EVENT, command);
@@ -243,7 +256,10 @@ function TmuxTerminal({ pane, client, profile, theme, active, visible, width, he
       onChange={(event) => { setQuery(event.target.value); searchRef.current?.findNext(event.target.value); }}
       onKeyDown={(event) => {
         if (event.key === "Enter") event.shiftKey ? searchRef.current?.findPrevious(query) : searchRef.current?.findNext(query);
-        if (event.key === "Escape") { setQuery(null); terminalRef.current?.focus(); }
+        if (event.key === "Escape") {
+          setQuery(null);
+          window.setTimeout(() => terminalRef.current?.focus(), 0);
+        }
       }} />}
   </div>;
 }

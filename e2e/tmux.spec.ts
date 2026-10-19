@@ -87,8 +87,23 @@ test("tmux control mode renders windows and panes, routes input, and returns to 
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("iterm.profiles.v1") ?? "[]")[0]?.terminal.fontSize)).toBe(15);
   expect(await terminalNode!.evaluate((node) => node.isConnected)).toBe(true);
   await page.keyboard.press("Control+f");
+  await expect(page.getByLabel("Find terminal content")).toHaveCount(1);
   await expect(page.getByLabel("Find terminal content")).toBeFocused();
+  // 查找输入必须使用应用皮肤，而不是宿主原生的白色输入框。
+  await expect(page.locator(".tmux-search")).toHaveCSS("border-radius", "5px");
+  await expect(page.locator(".tmux-search")).not.toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  // 查找输入不得压住窗格标签。
+  const searchBox = await page.locator(".tmux-search").boundingBox();
+  const labelBox = await page
+    .locator(".tmux-pane:visible .tmux-pane-label")
+    .first()
+    .boundingBox();
+  expect(searchBox!.x + searchBox!.width).toBeLessThanOrEqual(labelBox!.x);
   await page.getByLabel("Find terminal content").press("Escape");
+  await expect(page.getByLabel("Find terminal content")).toHaveCount(0);
   await expect(page.locator(".tmux-terminal:visible textarea")).toBeFocused();
   await workspace.getByRole("button", { name: "Split tmux pane side by side" }).click();
   await expect(page.locator(".tmux-pane:visible")).toHaveCount(2);

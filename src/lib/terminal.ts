@@ -58,6 +58,53 @@ export function isTerminalCompletionTab(event: TerminalKeyEvent): boolean {
   );
 }
 
+export type CompletionAcceptAction =
+  /** 用户已显式选中候选，把剩余字符补齐到输入行。 */
+  | { kind: "accept"; remainder: string }
+  /** 没有可接受的选择，按键交给会话。 */
+  | { kind: "passthrough" };
+
+/**
+ * 候选能否把输入行再往后补一截。与输入完全一致（或不是前缀）的候选
+ * 补不出任何字符，选中它们再按接受键只会让用户以为键失灵。
+ */
+export function canCompleteFromBuffer(
+  command: string,
+  buffer: string,
+): boolean {
+  return (
+    command.toLocaleLowerCase().startsWith(buffer.toLocaleLowerCase()) &&
+    command.length > buffer.length
+  );
+}
+
+export interface CompletionAcceptInput {
+  /** 用户用方向键选中的候选下标，未选中为 -1。 */
+  selectedIndex: number;
+  /** 当前输入行的影子缓冲。 */
+  buffer: string;
+  suggestions: readonly { command: string }[];
+}
+
+/**
+ * 联想只在用户显式选中候选后接受按键（回车）。Tab 不属于联想，
+ * 始终交给会话，shell 与串口设备都能拿到自己的补全键。
+ */
+export function resolveCompletionAcceptAction({
+  selectedIndex,
+  buffer,
+  suggestions,
+}: CompletionAcceptInput): CompletionAcceptAction {
+  if (selectedIndex < 0) return { kind: "passthrough" };
+  const suggestion = suggestions[selectedIndex];
+  if (!suggestion) return { kind: "passthrough" };
+  const command = suggestion.command;
+  if (canCompleteFromBuffer(command, buffer)) {
+    return { kind: "accept", remainder: command.slice(buffer.length) };
+  }
+  return { kind: "passthrough" };
+}
+
 /**
  * xterm 6 keeps processing `keypress` events even when a custom keydown
  * handler already consumed the key, so Enter (charCode 13) would be sent

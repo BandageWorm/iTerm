@@ -191,6 +191,29 @@ export async function openSerialSession(
       ),
     );
   });
+
+  // E2E 夹具：把终端缓冲区填满，用来复现"输入行位于面板底部"的浮层定位场景。
+  if (new URLSearchParams(window.location.search).has("mockScrollback")) {
+    const filler = Array.from(
+      { length: 120 },
+      (_, index) => `line ${String(index + 1).padStart(3, "0")}`,
+    );
+    timers.push(
+      window.setTimeout(
+        () =>
+          onEvent({
+            type: "data",
+            sessionId,
+            sequence: 900,
+            receivedAtMs: Date.now(),
+            bytes: Array.from(
+              new TextEncoder().encode(`${filler.join("\r\n")}\r\n`),
+            ),
+          }),
+        400,
+      ),
+    );
+  }
 }
 
 export async function closeSerialSession(sessionId: string): Promise<void> {

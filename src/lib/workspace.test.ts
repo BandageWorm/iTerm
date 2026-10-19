@@ -13,6 +13,7 @@ describe("workspace persistence", () => {
       sidebarOpen: false,
       senderOpen: true,
       quickBarOpen: false,
+      historyOpen: false,
       openProfileIds: ["one", "two"],
       activeProfileId: "two",
       splitMode: "horizontal",
@@ -37,6 +38,24 @@ describe("workspace persistence", () => {
         getItem: () => "{broken",
       }),
     ).toEqual(DEFAULT_WORKSPACE_SNAPSHOT);
+  });
+
+  it("defaults the history bar to visible when the field is missing or invalid", () => {
+    expect(
+      loadWorkspaceSnapshot({
+        getItem: () => JSON.stringify({ sidebarOpen: true, senderOpen: true }),
+      }).historyOpen,
+    ).toBe(true);
+    expect(
+      loadWorkspaceSnapshot({
+        getItem: () => JSON.stringify({ historyOpen: "no" }),
+      }).historyOpen,
+    ).toBe(true);
+    expect(
+      loadWorkspaceSnapshot({
+        getItem: () => JSON.stringify({ historyOpen: false }),
+      }).historyOpen,
+    ).toBe(false);
   });
 
   it("defaults the quick command bar to open when the field is missing or invalid", () => {

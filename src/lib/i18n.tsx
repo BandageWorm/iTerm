@@ -35,6 +35,9 @@ const zhCN = {
   "settings.theme.system": "跟随系统",
   "settings.closeConfirmation": "关闭确认",
   "settings.closeConfirmation.detail": "关闭活动会话或退出应用前确认",
+  "settings.rightClickCopyPaste": "右键复制粘贴",
+  "settings.rightClickCopyPaste.detail":
+    "开启后有选中内容时右键复制并清除选区，无选中时右键粘贴；按住 Shift 右键仍打开菜单",
   "settings.defaults.title": "新会话默认值",
   "settings.defaults.subtitle": "当前会话保存的设置始终优先于这些默认值。",
   "settings.defaultProtocol": "默认协议",
@@ -96,6 +99,8 @@ const zhCN = {
   "menu.go.previous": "上一个会话",
   "menu.view.sidebar": "会话管理器",
   "menu.view.sender": "发送窗格",
+  "menu.view.quickCommands": "常用命令栏",
+  "menu.view.history": "历史命令栏",
   "menu.view.focus": "专注模式",
   "menu.view.zoomIn": "放大终端字号",
   "menu.view.zoomOut": "缩小终端字号",
@@ -327,6 +332,7 @@ const zhCN = {
   "terminal.command.send": "发送命令",
   "terminal.command.close": "关闭命令联想",
   "terminal.command.suggestions": "命令建议",
+  "terminal.command.acceptHint": "选择后回车补全",
   "terminal.command.quick": "快捷命令",
   "terminal.command.history": "历史 · {count}×",
   "terminal.context.title": "终端操作菜单",
@@ -599,6 +605,9 @@ const enUS: Record<TranslationKey, string> = {
   "settings.closeConfirmation": "Close confirmation",
   "settings.closeConfirmation.detail":
     "Confirm before closing an active session or quitting",
+  "settings.rightClickCopyPaste": "Right-click copy and paste",
+  "settings.rightClickCopyPaste.detail":
+    "Copy the selection (and clear it) on right-click, or paste when nothing is selected; hold Shift to open the menu",
   "settings.defaults.title": "New Session Defaults",
   "settings.defaults.subtitle":
     "Settings saved in a session always override these defaults.",
@@ -664,6 +673,8 @@ const enUS: Record<TranslationKey, string> = {
   "menu.go.previous": "Previous Session",
   "menu.view.sidebar": "Session Manager",
   "menu.view.sender": "Sender Pane",
+  "menu.view.quickCommands": "Quick Command Bar",
+  "menu.view.history": "Command History Bar",
   "menu.view.focus": "Focus Mode",
   "menu.view.zoomIn": "Increase Terminal Font Size",
   "menu.view.zoomOut": "Decrease Terminal Font Size",
@@ -902,6 +913,7 @@ const enUS: Record<TranslationKey, string> = {
   "terminal.command.send": "Send command",
   "terminal.command.close": "Close command suggestions",
   "terminal.command.suggestions": "Command suggestions",
+  "terminal.command.acceptHint": "Select, then Enter",
   "terminal.command.quick": "Quick command",
   "terminal.command.history": "History · {count}×",
   "terminal.context.title": "Terminal actions",

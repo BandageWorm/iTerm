@@ -5,6 +5,8 @@ export interface WorkspaceSnapshot {
   sidebarOpen: boolean;
   senderOpen: boolean;
   quickBarOpen: boolean;
+  /** 终端历史命令栏是否显示。 */
+  historyOpen: boolean;
   openProfileIds: string[];
   activeProfileId: string | null;
   splitMode: SplitMode;
@@ -17,6 +19,7 @@ export const DEFAULT_WORKSPACE_SNAPSHOT: WorkspaceSnapshot = {
   sidebarOpen: true,
   senderOpen: true,
   quickBarOpen: true,
+  historyOpen: true,
   openProfileIds: [],
   activeProfileId: null,
   splitMode: "single",
@@ -55,6 +58,10 @@ export function loadWorkspaceSnapshot(
         typeof parsed.quickBarOpen === "boolean"
           ? parsed.quickBarOpen
           : DEFAULT_WORKSPACE_SNAPSHOT.quickBarOpen,
+      historyOpen:
+        typeof parsed.historyOpen === "boolean"
+          ? parsed.historyOpen
+          : DEFAULT_WORKSPACE_SNAPSHOT.historyOpen,
       openProfileIds: Array.isArray(parsed.openProfileIds)
         ? parsed.openProfileIds.filter(
             (profileId): profileId is string => typeof profileId === "string",

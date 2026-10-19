@@ -18,6 +18,24 @@ export interface ContextMenuPosition {
   y: number;
 }
 
+export interface TerminalSearchRequest {
+  requestId: number;
+  /**
+   * Identifies the pane that asked for the search bar. Keyboard requests carry
+   * the requesting pane's token so the bar opens there even when the pane has
+   * not finished becoming the active pane yet. Global triggers omit it and
+   * fall back to the active pane.
+   */
+  source?: unknown;
+}
+
+export interface TerminalSearchOptions {
+  source?: unknown;
+  target?: Pick<Window, "dispatchEvent">;
+}
+
+let terminalSearchRequestId = 0;
+
 export function clampContextMenuPosition(
   x: number,
   y: number,
@@ -34,9 +52,16 @@ export function clampContextMenuPosition(
 }
 
 export function requestTerminalSearch(
-  target: Pick<Window, "dispatchEvent"> = window,
-): void {
-  target.dispatchEvent(new Event(TERMINAL_SEARCH_EVENT));
+  { source, target = window }: TerminalSearchOptions = {},
+): number {
+  terminalSearchRequestId += 1;
+  const requestId = terminalSearchRequestId;
+  target.dispatchEvent(
+    new CustomEvent<TerminalSearchRequest>(TERMINAL_SEARCH_EVENT, {
+      detail: { requestId, source },
+    }),
+  );
+  return requestId;
 }
 
 export function requestTerminalCommand(

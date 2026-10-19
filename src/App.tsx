@@ -364,6 +364,7 @@ export default function App() {
   const [quickBarOpen, setQuickBarOpen] = useState(
     initialWorkspace.quickBarOpen,
   );
+  const [historyOpen, setHistoryOpen] = useState(initialWorkspace.historyOpen);
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>(() =>
     loadQuickCommands(),
   );
@@ -685,6 +686,7 @@ export default function App() {
       sidebarOpen,
       senderOpen,
       quickBarOpen,
+      historyOpen,
       openProfileIds: sessions.map((session) => session.profileId),
       activeProfileId:
         sessions.find((session) => session.id === activeSessionId)?.profileId ??
@@ -697,6 +699,7 @@ export default function App() {
     });
   }, [
     activeSessionId,
+    historyOpen,
     quickBarOpen,
     senderOpen,
     sidebarOpen,
@@ -2512,6 +2515,16 @@ export default function App() {
           onSelect: () => setSenderOpen((current) => !current),
         },
         {
+          label: t("menu.view.quickCommands"),
+          checked: quickBarOpen,
+          onSelect: () => setQuickBarOpen((current) => !current),
+        },
+        {
+          label: t("menu.view.history"),
+          checked: historyOpen,
+          onSelect: () => setHistoryOpen((current) => !current),
+        },
+        {
           label: t("menu.view.focus"),
           shortcut: "Ctrl/⌘+Shift+F",
           checked: focusMode,
@@ -3398,6 +3411,8 @@ export default function App() {
                   }
                   receiveMode={session.receiveMode}
                   theme={resolvedTheme}
+                  rightClickCopyPaste={preferences.rightClickCopyPaste}
+                  showHistory={historyOpen}
                   onActivate={() => activateSession(session.id)}
                   onResize={(cols, rows) => {
                     setSessions((current) =>

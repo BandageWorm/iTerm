@@ -4380,6 +4380,7 @@ progress {
   bottom: 7px;
   left: 7px;
   display: grid;
+  grid-template-rows: minmax(0, auto) auto;
   max-width: 520px;
   overflow: hidden;
   background: var(--popover-background);
@@ -4389,7 +4390,17 @@ progress {
   color: var(--label);
 }
 
-.terminal-inline-completion > button {
+.terminal-pane:not(.has-history-dock) .terminal-inline-completion {
+  right: 7px;
+}
+
+.terminal-inline-completion-list {
+  display: grid;
+  max-height: 162px;
+  overflow: auto;
+}
+
+.terminal-inline-completion-list > button {
   display: grid;
   min-height: 27px;
   align-items: center;
@@ -4401,13 +4412,18 @@ progress {
   text-align: left;
 }
 
-.terminal-inline-completion > button:hover,
-.terminal-inline-completion > button.is-active {
+.terminal-inline-completion-list > button:hover,
+.terminal-inline-completion-list > button.is-active {
   background: var(--accent);
   color: #fff;
 }
 
-.terminal-inline-completion > button span {
+/* 无法把输入行补全的候选（与输入一致或非前缀）不参与键盘选择。 */
+.terminal-inline-completion-list > button.is-static {
+  color: var(--terminal-muted);
+}
+
+.terminal-inline-completion-list > button span {
   overflow: hidden;
   font: 11px "Cascadia Mono", Consolas, monospace;
   text-overflow: ellipsis;
@@ -4419,8 +4435,8 @@ progress {
   font-size: 9px;
 }
 
-.terminal-inline-completion > button.is-active small,
-.terminal-inline-completion > button:hover small {
+.terminal-inline-completion-list > button.is-active small,
+.terminal-inline-completion-list > button:hover small {
   color: rgba(255, 255, 255, 0.78);
 }
 
@@ -4442,6 +4458,17 @@ progress {
   overflow: hidden;
   font-family: "Cascadia Mono", Consolas, monospace;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-inline-completion > footer .terminal-inline-completion-hint {
+  flex: none;
+  margin-left: 1px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--terminal-muted);
+  font-family: inherit;
   white-space: nowrap;
 }
 
@@ -4534,4 +4561,21 @@ progress {
 .tmux-terminal .xterm { height: 100%; }
 .tmux-terminal .xterm-viewport { background: transparent !important; }
 .tmux-pane-label { position: absolute; right: 16px; top: 2px; font-size: 10px; opacity: .65; pointer-events: none; }
-.tmux-search { position: absolute; top: 4px; right: 22px; z-index: 1; }
+.tmux-search {
+  position: absolute;
+  top: 4px;
+  right: 32px;
+  z-index: 1;
+  width: min(220px, 45%);
+  height: 31px;
+  padding: 0 8px;
+  background: var(--terminal-control);
+  border: 1px solid var(--terminal-border);
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+  color: var(--label);
+  outline: none;
+  font: 11px "Cascadia Mono", Consolas, monospace;
+}
+.tmux-search::placeholder { color: var(--terminal-muted); }
+.tmux-search:focus { border-color: var(--accent); }
